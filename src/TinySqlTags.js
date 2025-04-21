@@ -17,22 +17,6 @@ import { objType } from 'tiny-essentials';
  * - An internal engine to dynamically build `EXISTS`-based SQL conditions compatible with JSON arrays
  * - Integration-ready output for SQLite3, Postgre or similar relational databases
  *
- * @author JasminDreasond
- * @version 1.0
- * @date 2025-03-24
- *
- * Documentation written with the assistance of OpenAI's ChatGPT.
- *
- * License: AGPL-3.0
- * ----------
- * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License
- * as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
- * of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
- *
  * ----------
  * 💖 Special Thanks 💖
  * Deep gratitude to the Derpibooru project for the inspiration, structure, and creativity

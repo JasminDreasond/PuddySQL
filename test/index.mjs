@@ -1,3 +1,3 @@
-import { } from '../dist/index.mjs';
+import { TinySqlQuery, TinySqlTags, TinySQL } from '../dist/index.mjs';
 
-console.log();
+console.log(TinySqlQuery, TinySqlTags, TinySQL);

@@ -1,3 +1,3 @@
-const { } = require('../dist/index.cjs');
+const { TinySqlQuery, TinySqlTags, TinySQL } = require('../dist/index.cjs');
 
-console.log();
+console.log(TinySqlQuery, TinySqlTags, TinySQL);

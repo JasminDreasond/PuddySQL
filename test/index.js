@@ -1,3 +1,3 @@
-import { } from '../dist';
+import { TinySqlQuery, TinySqlTags, TinySQL } from '../dist';
 
-console.log();
+console.log(TinySqlQuery, TinySqlTags, TinySQL);
