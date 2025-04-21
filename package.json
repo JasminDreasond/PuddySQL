@@ -16,6 +16,9 @@
   "author": "Yasmin Seidel (JasminDreasond)",
   "license": "GPL-3.0-only",
   "dependencies": {
+    "pg": "^8.14.1",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
     "tiny-essentials": "^1.0.0"
   },
   "keywords": [],
