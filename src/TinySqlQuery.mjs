@@ -1,7 +1,8 @@
-import { Client } from 'pg';
+import pg from 'pg';
 import { objType } from 'tiny-essentials';
-import TinySqlTags from './TinySqlTags';
+import TinySqlTags from './TinySqlTags.mjs';
 
+const { Client } = pg;
 const clientBase = new Client();
 
 /**

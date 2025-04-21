@@ -1,10 +1,12 @@
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import { Client } from 'pg';
+import pg from 'pg';
 import EventEmitter from 'events';
 import { objType } from 'tiny-essentials';
 
-import TinySqlQuery from './TinySqlQuery';
+import TinySqlQuery from './TinySqlQuery.mjs';
+
+const { Client } = pg;
 
 /**
  * TinySQL is a wrapper for basic SQL operations on a local storage abstraction.
