@@ -1,6 +1,6 @@
-import TinySQL from './base';
-import TinySqlQuery from './query';
-import TinySqlTags from './tag';
+import TinySQL from './TinySQL';
+import TinySqlQuery from './TinySqlQuery';
+import TinySqlTags from './TinySqlTags';
 
 export { TinySqlQuery, TinySqlTags };
 

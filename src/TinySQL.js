@@ -4,7 +4,7 @@ import { Client } from 'pg';
 import EventEmitter from 'events';
 import { objType } from 'tiny-essentials';
 
-import TinySqlQuery from './query';
+import TinySqlQuery from './TinySqlQuery';
 
 /**
  * TinySQL is a wrapper for basic SQL operations on a local storage abstraction.
