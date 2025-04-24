@@ -1,6 +1,4 @@
 # Remove original repository data
-docs
-build
 src
 test
 .babelrc
@@ -108,15 +106,10 @@ out
 # https://nextjs.org/blog/next-9-1#public-directory-support
 # public
 
-# vuepress build output
-.vuepress/dist
 
 # vuepress v2.x temp and cache directory
 .temp
 .cache
-
-# vitepress build output
-**/.vitepress/dist
 
 # vitepress cache directory
 **/.vitepress/cache
