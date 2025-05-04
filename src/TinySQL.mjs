@@ -1,27 +1,34 @@
 import { open } from 'sqlite';
-import sqlite3 from 'sqlite3';
-import pg from 'pg';
-import EventEmitter from 'events';
+import { Database } from 'sqlite3';
+import * as pg from 'pg';
+import { EventEmitter } from 'events';
 import { objType } from 'tiny-essentials';
 
-import TinySqlQuery from './TinySqlQuery.mjs';
+import PuddySqlQuery from './TinySqlQuery.mjs';
 
 const { Client } = pg;
 
 /**
- * TinySQL is a wrapper for basic SQL operations on a local storage abstraction.
+ * PuddySql is a wrapper for basic SQL operations on a local storage abstraction.
  * It supports inserting, updating, deleting, querying and joining JSON-based structured data.
  */
-class TinySQL {
+class PuddySqlInstance {
+  /** @type {string|undefined} */
   #sqlEngine;
+
+  /** @type {Database|undefined} */
   #db;
+
   #tables = {};
   #debug = false;
-  #event = new EventEmitter();
   #debugCount = 0;
   #consoleColors = true;
 
-  constructor() {}
+  /**
+   * Important instance used to make event emitter.
+   * @type {EventEmitter}
+   */
+  #events = new EventEmitter();
 
   /**
    * Enables or disables console color output for debug messages.
@@ -45,7 +52,6 @@ class TinySQL {
    * Formats SQL for colorful and readable debug in terminal.
    * Adds indentation, line breaks, and ANSI colors to major SQL clauses.
    *
-   * @private
    * @param {string} value - Raw SQL query string.
    * @returns {string} Colorized and formatted SQL string for terminal.
    */
@@ -130,59 +136,83 @@ class TinySQL {
   }
 
   /**
-   * Registers an event listener for the specified event.
-   *
-   * @param {string} name - Name of the event.
-   * @param {Function} callback - Function to call when the event is triggered.
+   * @typedef {(...args: any[]) => void} ListenerCallback
+   * A generic callback function used for event listeners.
    */
-  on = (name, callback) => this.#event.on(name, callback);
 
   /**
-   * Unregisters an event listener from the specified event.
+   * Sets the maximum number of listeners for the internal event emitter.
    *
-   * @param {string} name - Name of the event.
-   * @param {Function} callback - Function that was previously registered.
+   * @param {number} max - The maximum number of listeners allowed.
    */
-  off = (name, callback) => this.#event.off(name, callback);
+  setMaxListeners(max) {
+    this.#events.setMaxListeners(max);
+  }
 
   /**
-   * Alias for `on()`. Registers an event listener.
-   *
-   * @param {string} name - Name of the event.
-   * @param {Function} callback - Listener function.
+   * Emits an event with optional arguments.
+   * @param {string | symbol} event - The name of the event to emit.
+   * @param {...any} args - Arguments passed to event listeners.
+   * @returns {boolean} `true` if the event had listeners, `false` otherwise.
    */
-  addListener = (name, callback) => this.#event.addListener(name, callback);
+  emit(event, ...args) {
+    return this.#events.emit(event, ...args);
+  }
 
   /**
-   * Alias for `off()`. Removes a specific listener.
-   *
-   * @param {string} name - Name of the event.
-   * @param {Function} callback - Listener function to remove.
+   * Registers a listener for the specified event.
+   * @param {string | symbol} event - The name of the event to listen for.
+   * @param {ListenerCallback} listener - The callback function to invoke.
+   * @returns {this} The current class instance (for chaining).
    */
-  removeListener = (name, callback) => this.#event.removeListener(name, callback);
+  on(event, listener) {
+    this.#events.on(event, listener);
+    return this;
+  }
 
   /**
-   * Removes all listeners for a specific event.
-   *
-   * @param {string} name - Name of the event.
+   * Registers a one-time listener for the specified event.
+   * @param {string | symbol} event - The name of the event to listen for once.
+   * @param {ListenerCallback} listener - The callback function to invoke.
+   * @returns {this} The current class instance (for chaining).
    */
-  removeAllListeners = (name) => this.#event.removeAllListeners(name);
+  once(event, listener) {
+    this.#events.once(event, listener);
+    return this;
+  }
 
   /**
-   * Sets the maximum number of listeners for the event emitter.
-   *
-   * @param {number} count - The new maximum number of listeners.
+   * Removes a listener from the specified event.
+   * @param {string | symbol} event - The name of the event.
+   * @param {ListenerCallback} listener - The listener to remove.
+   * @returns {this} The current class instance (for chaining).
    */
-  setMaxListeners = (count) => this.#event.setMaxListeners(count);
+  off(event, listener) {
+    this.#events.off(event, listener);
+    return this;
+  }
 
   /**
-   * Emits an event, triggering all listeners registered for the specified event name.
-   *
-   * @param {string} name - The name of the event to emit.
-   * @param {...any} args - Arguments to pass to the listener functions.
-   * @returns {boolean} Returns `true` if the event had listeners, `false` otherwise.
+   * Alias for `on`.
+   * @param {string | symbol} event - The name of the event.
+   * @param {ListenerCallback} listener - The callback to register.
+   * @returns {this} The current class instance (for chaining).
    */
-  emit = (name, ...args) => this.#event.emit(name, ...args);
+  addListener(event, listener) {
+    this.#events.addListener(event, listener);
+    return this;
+  }
+
+  /**
+   * Alias for `off`.
+   * @param {string | symbol} event - The name of the event.
+   * @param {ListenerCallback} listener - The listener to remove.
+   * @returns {this} The current class instance (for chaining).
+   */
+  removeListener(event, listener) {
+    this.#events.removeListener(event, listener);
+    return this;
+  }
 
   /**
    * Checks if the given error message indicates a connection error based on the SQL engine in use.
@@ -291,21 +321,21 @@ class TinySQL {
    * Initializes a new table.
    *
    * This method checks if a table with the provided name already exists in the internal `#tables` object.
-   * If the table doesn't exist, it creates a new instance of the `TinySqlQuery` submodule, sets the database
+   * If the table doesn't exist, it creates a new instance of the `PuddySqlQuery` submodule, sets the database
    * and settings, and creates the table using the provided column data. The table is then stored in the
    * `#tables` object for future reference.
    *
-   * The table name and column data are passed into the `TinySqlQuery` submodule to construct the table schema.
+   * The table name and column data are passed into the `PuddySqlQuery` submodule to construct the table schema.
    * Additional settings can be provided to customize the behavior of the table (e.g., `select`, `order`, `id`).
    *
    * @param {Object} [settings={}] - Optional settings to customize the table creation. This can include properties like `select`, `join`, `order`, `id`, etc.
    * @param {Array<Array<string>>} [tableData=[]] - An array of columns and their definitions to create the table. Each column is defined by an array, which can include column name, type, and additional settings.
-   * @returns {Promise<TinySqlQuery>} Resolves to the `TinySqlQuery` instance associated with the created or existing table.
+   * @returns {Promise<PuddySqlQuery>} Resolves to the `PuddySqlQuery` instance associated with the created or existing table.
    * @throws {Error} If the table has already been initialized.
    */
   async initTable(settings = {}, tableData = []) {
     if (!this.#tables[settings.name]) {
-      const newTable = new TinySqlQuery();
+      const newTable = new PuddySqlQuery();
       newTable.setDb(settings, this);
       await newTable.createTable(tableData);
 
@@ -316,13 +346,13 @@ class TinySQL {
   }
 
   /**
-   * Retrieves the `TinySqlQuery` instance for the given table name.
+   * Retrieves the `PuddySqlQuery` instance for the given table name.
    *
-   * This method checks the internal `#tables` object and returns the corresponding `TinySqlQuery`
+   * This method checks the internal `#tables` object and returns the corresponding `PuddySqlQuery`
    * instance associated with the table name. If the table does not exist, it returns `null`.
    *
    * @param {string} tableName - The name of the table to retrieve.
-   * @returns {TinySqlQuery|null} The `TinySqlQuery` instance associated with the table, or `null` if the table does not exist.
+   * @returns {PuddySqlQuery|null} The `PuddySqlQuery` instance associated with the table, or `null` if the table does not exist.
    */
   getTable(tableName) {
     if (this.#tables[tableName]) return this.#tables[tableName];
@@ -363,7 +393,7 @@ class TinySQL {
   /**
    * Drops and removes the table with the given name.
    *
-   * This method calls the `dropTable()` method on the corresponding `TinySqlQuery` instance,
+   * This method calls the `dropTable()` method on the corresponding `PuddySqlQuery` instance,
    * removing the table schema from the database. After successfully dropping the table, it removes
    * the table from the internal `#tables` object.
    *
@@ -440,7 +470,7 @@ class TinySQL {
       // Open SQLite3 database using the provided file path
       this.#db = await open({
         filename: filePath,
-        driver: sqlite3.Database,
+        driver: Database,
       });
 
       // Set SQL methods (all, get, run)
@@ -473,7 +503,7 @@ class TinySQL {
         if (isConnectionError(err)) event.emit('connection-error', err);
         reject(err);
       };
-      const event = this.#event;
+      const event = this.#events;
       const getId = () => this.#debugCount++;
       const isDebug = () => this.#debug;
       const sendSqlDebug = (id, debugName, query, params) => {
@@ -604,7 +634,7 @@ class TinySQL {
       const rejectConnection = (err) => {
         if (isConnectionError(err)) event.emit('connection-error', err);
       };
-      const event = this.#event;
+      const event = this.#events;
       db.on('error', rejectConnection);
 
       const getId = () => this.#debugCount++;
@@ -730,4 +760,4 @@ class TinySQL {
   run = (query, params) => new Promise((resolve) => resolve(null));
 }
 
-export default TinySQL;
+export default PuddySqlInstance;

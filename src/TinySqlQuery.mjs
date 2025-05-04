@@ -1,6 +1,6 @@
-import pg from 'pg';
+import * as pg from 'pg';
 import { objType } from 'tiny-essentials';
-import TinySqlTags from './TinySqlTags.mjs';
+import PuddySqlTags from './TinySqlTags.mjs';
 
 const { Client } = pg;
 const clientBase = new Client();
@@ -8,7 +8,7 @@ const clientBase = new Client();
 /**
  * TinySQLQuery is a queries operating system developed to operate in a specific table.
  */
-class TinySqlQuery {
+class PuddySqlQuery {
   #conditions = {};
   #customValFunc = {};
   #db;
@@ -280,7 +280,6 @@ class TinySqlQuery {
    *
    * Escaping of all values is handled by `Client.escapeLiteral()` for SQL safety (PostgreSQL).
    *
-   * @private
    * @param {string|string[]|object|null|undefined} input - Select clause definition.
    * @returns {string} - A valid SQL SELECT clause string.
    *
@@ -504,7 +503,6 @@ class TinySqlQuery {
    * Helper function to parse individual columns or SQL expressions.
    * Supports aliasing and complex expressions.
    *
-   * @private
    * @param {string} column - Column name or SQL expression.
    * @param {string} [alias] - Alias for the column (optional).
    * @returns {string} - A valid SQL expression for SELECT clause.
@@ -647,7 +645,7 @@ class TinySqlQuery {
    * Creates a table in the database based on provided column definitions.
    * Also stores the column structure in this.#table as an object keyed by column name.
    * If a column type is "TAGS", it will be replaced with "JSON" for SQL purposes,
-   * and registered in #tagColumns using a TinySqlTags instance,
+   * and registered in #tagColumns using a PuddySqlTags instance,
    * but the original "TAGS" value will be preserved in this.#table.
    * @param {Array<Array<string|any>>} columns - An array of column definitions.
    * Each column is defined by an array containing the column name, type, and optional configurations.
@@ -667,7 +665,7 @@ class TinySqlQuery {
         // Tags
         if (type.toUpperCase() === 'TAGS') {
           col[1] = 'JSON';
-          this.#tagColumns[name] = new TinySqlTags(name);
+          this.#tagColumns[name] = new PuddySqlTags(name);
         }
       }
 
@@ -703,11 +701,11 @@ class TinySqlQuery {
   }
 
   /**
-   * Returns the TinySqlTags instance associated with the given column name,
+   * Returns the PuddySqlTags instance associated with the given column name,
    * if it was defined as a "TAGS" column during table creation.
    *
    * @param {string} name - The column name to retrieve the tag editor for.
-   * @returns {TinySqlTags|null} - The TinySqlTags instance if it exists, otherwise null.
+   * @returns {PuddySqlTags|null} - The PuddySqlTags instance if it exists, otherwise null.
    */
   getTagEditor(name) {
     if (this.#tagColumns[name]) return this.#tagColumns[name];
@@ -879,7 +877,6 @@ class TinySqlQuery {
    *
    * Supported types: BOOLEAN, INTEGER, BIGINT, FLOAT, TEXT, JSON, DATE, TIMESTAMP, etc.
    *
-   * @private
    * @param {object} result - The result row to check.
    * @returns {object}
    */
@@ -942,7 +939,7 @@ class TinySqlQuery {
    * @param {string|null} [settings.order=null] - Optional ORDER BY clause.
    * @param {string} [settings.id='key'] - Primary key column name.
    * @param {string|null} [settings.subId=null] - Optional secondary key column name.
-   * @param {object} - TinySQL Instance.
+   * @param {object} - PuddySql Instance.
    */
   setDb(settings = {}, db = null) {
     if (db) this.#db = db;
@@ -976,7 +973,6 @@ class TinySqlQuery {
    * - SQLite (uses `changes`)
    * - PostgreSQL (uses `rowCount`)
    *
-   * @private
    * @type {Object.<string>}
    */
   #resultCounts = {
@@ -992,7 +988,6 @@ class TinySqlQuery {
    * - PostgreSQL: returns `result.rowCount`
    * - Fallback: `result.rowsAffected`, if defined
    *
-   * @private
    * @param {Object} result - The result object returned by the database driver.
    * @returns {number|null} The number of affected rows, or null if it can't be determined.
    */
@@ -1446,7 +1441,6 @@ class TinySqlQuery {
    * It expects `this.#settings.join` to be a string containing the table name,
    * and `this.#settings.joinCompare` to be the ON condition.
    *
-   * @private
    * @returns {string} The default LEFT JOIN SQL snippet, or an empty string if no join is configured.
    */
   #insertJoin() {
@@ -1541,7 +1535,6 @@ class TinySqlQuery {
    * - `compare`: The ON clause condition.
    * - `type` (optional): One of the supported JOIN types (e.g., 'left', 'inner'). Defaults to 'left'.
    *
-   * @private
    * @param {object|object[]} join - The join configuration(s).
    * @returns {string} One or more JOIN SQL snippets.
    */
@@ -1807,4 +1800,4 @@ class TinySqlQuery {
   }
 }
 
-export default TinySqlQuery;
+export default PuddySqlQuery;

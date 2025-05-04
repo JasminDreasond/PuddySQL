@@ -1,5 +1,5 @@
 {
-  "name": "tinysql",
+  "name": "puddysql",
   "description": "",
   "version": "1.0.0-beta",
   "main": "./dist/index.cjs",
@@ -16,10 +16,12 @@
   "author": "Yasmin Seidel (JasminDreasond)",
   "license": "GPL-3.0-only",
   "dependencies": {
+    "@types/pg": "^8.11.14",
+    "@types/sqlite3": "^3.1.11",
     "pg": "^8.14.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
-    "tiny-essentials": "^1.0.0"
+    "tiny-essentials": "^1.7.1"
   },
   "keywords": [],
   "scripts": {

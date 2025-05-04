@@ -1,11 +1,11 @@
 import { objType } from 'tiny-essentials';
 
 /**
- * @class TinySqlTags
+ * @class PuddySqlTags
  * @description A powerful utility class for building advanced SQL WHERE clauses with support for tag-based filtering,
  * custom boolean logic, wildcard parsing, and special query handlers.
  *
- * TinySqlTags provides a structured way to interpret and transform flexible user search input into robust SQL conditions,
+ * PuddySqlTags provides a structured way to interpret and transform flexible user search input into robust SQL conditions,
  * including support for parentheses grouping, AND/OR logic, special colon-based filters, and customizable weight systems
  * using symbolic operators. Designed with modularity and extensibility in mind, it also prevents unwanted repetitions and
  * allows precise control over column names, aliases, and JSON handling through `json_each`.
@@ -22,9 +22,9 @@ import { objType } from 'tiny-essentials';
  * Deep gratitude to the Derpibooru project for the inspiration, structure, and creativity
  * that influenced this tool. A tiny heartfelt thank you to **Nighty**. :3
  */
-class TinySqlTags {
+class PuddySqlTags {
   /**
-   * Creates an instance of the TinySqlTags class.
+   * Creates an instance of the PuddySqlTags class.
    * @param {string} defaultColumn - The default column name to use in queries (default is 'tags').
    */
   constructor(defaultColumn = 'tags') {
@@ -54,7 +54,6 @@ class TinySqlTags {
    * These mappings enable flexible handling of tags, where the symbols (`^`, `~`, etc.) can be used
    * to categorize tags dynamically and assign values to them based on their symbol.
    *
-   * @private
    * @type {Object<string, { list: string, valueKey: string }>}
    * @example
    * // Example usage:
@@ -244,7 +243,6 @@ class TinySqlTags {
    * The method returns a string representing the SQL WHERE clause, and updates `pCache.values`
    * with the filtered values in proper order for parameterized queries.
    *
-   * @private
    * @param {Object} [pCache={ index: 1, values: [] }] - Parameter cache used to build the WHERE clause.
    * @param {number} [pCache.index=1] - Starting parameter index for SQL placeholders (e.g., `$1`, `$2`...).
    * @param {Array<any>} [pCache.values=[]] - Collected values for SQL query binding.
@@ -347,7 +345,6 @@ class TinySqlTags {
    * It also updates the input chunks to remove already-processed terms and eliminate repetitions
    * when `noRepeat` mode is enabled.
    *
-   * @private
    * @param {Array<string|string[]>} chunks - A list of search terms or OR-groups (e.g., ['pony', ['red', 'blue']]).
    *
    * @returns {Object} An object with:
@@ -598,4 +595,4 @@ class TinySqlTags {
   }
 }
 
-export default TinySqlTags;
+export default PuddySqlTags;
