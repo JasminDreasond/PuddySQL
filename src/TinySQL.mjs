@@ -8,17 +8,22 @@ import PuddySqlQuery from './TinySqlQuery.mjs';
 
 const { Client } = pg;
 
+/** @typedef {import('pg').Pool} PgPool */
+
 /**
  * PuddySql is a wrapper for basic SQL operations on a local storage abstraction.
  * It supports inserting, updating, deleting, querying and joining JSON-based structured data.
  */
 class PuddySqlInstance {
-  /** @type {string|undefined} */
-  #sqlEngine;
+  /** @typedef {import('./TinySqlQuery.mjs').TableSettings} TableSettings */
 
-  /** @type {Database|undefined} */
+  /** @type {string} */
+  #sqlEngine = '';
+
+  /** @type {Database|PgPool|undefined} */
   #db;
 
+  /** @type {Record<string, PuddySqlQuery>} */
   #tables = {};
   #debug = false;
   #debugCount = 0;
@@ -36,7 +41,8 @@ class PuddySqlInstance {
    * @param {boolean} state - Set to `true` to enable colors, or `false` to disable.
    */
   setConsoleColors(state) {
-    this.#consoleColors = Boolean(state);
+    if (typeof state !== 'boolean') throw new Error('state must be a boolean');
+    this.#consoleColors = state;
   }
 
   /**
@@ -56,6 +62,9 @@ class PuddySqlInstance {
    * @returns {string} Colorized and formatted SQL string for terminal.
    */
   #debugSql(value) {
+    if (typeof value !== 'string' || value.trim() === '')
+      throw new Error('value must be a non-empty string');
+
     const useColor = this.#consoleColors !== false;
 
     const RESET = useColor ? '\x1b[0m' : '';
@@ -220,10 +229,12 @@ class PuddySqlInstance {
    * This method evaluates if the provided error message contains any known connection error codes
    * for the current SQL engine (PostgreSQL or SQLite3).
    *
-   * @param {string} msg - The error message to check.
+   * @param {Error} err - The error message to check.
    * @returns {boolean} True if the error message matches any known connection error codes; otherwise, false.
    */
   isConnectionError(err) {
+    if (typeof err !== 'object' || err === null || Array.isArray(err))
+      throw new Error('err must be a plain object');
     const sqlEngine = this.getSqlEngine();
     if (typeof sqlEngine === 'string') {
       // PostgreSQL
@@ -242,6 +253,7 @@ class PuddySqlInstance {
           '53300',
           '57P01',
         ];
+        // @ts-ignore
         for (const code of codes) if (err.code === code) return true;
       }
 
@@ -265,6 +277,12 @@ class PuddySqlInstance {
    * [SQL][123] [DEBUG] [MyDebug] [OK]
    */
   #debugConsoleText(id, debugName, status) {
+    if (typeof id !== 'string' && typeof id !== 'number')
+      throw new Error('id must be a string or number');
+    if (debugName !== undefined && typeof debugName !== 'string')
+      throw new Error('debugName must be a string if provided');
+    if (status !== undefined && typeof status !== 'string')
+      throw new Error('status must be a string if provided');
     const useColor = this.#consoleColors !== false;
 
     const reset = useColor ? '\x1b[0m' : '';
@@ -305,7 +323,8 @@ class PuddySqlInstance {
    * @param {boolean} isDebug - If true, debug mode is enabled; otherwise, it's disabled.
    */
   setIsDebug(isDebug) {
-    this.#debug = typeof isDebug === 'boolean' ? isDebug : false;
+    if (typeof isDebug !== 'boolean') throw new Error('isDebug must be a boolean');
+    this.#debug = isDebug;
   }
 
   /**
@@ -328,12 +347,15 @@ class PuddySqlInstance {
    * The table name and column data are passed into the `PuddySqlQuery` submodule to construct the table schema.
    * Additional settings can be provided to customize the behavior of the table (e.g., `select`, `order`, `id`).
    *
-   * @param {Object} [settings={}] - Optional settings to customize the table creation. This can include properties like `select`, `join`, `order`, `id`, etc.
+   * @param {TableSettings} [settings={}] - Optional settings to customize the table creation. This can include properties like `select`, `join`, `order`, `id`, etc.
    * @param {Array<Array<string>>} [tableData=[]] - An array of columns and their definitions to create the table. Each column is defined by an array, which can include column name, type, and additional settings.
    * @returns {Promise<PuddySqlQuery>} Resolves to the `PuddySqlQuery` instance associated with the created or existing table.
    * @throws {Error} If the table has already been initialized.
    */
   async initTable(settings = {}, tableData = []) {
+    if (typeof settings !== 'object' || settings === null || Array.isArray(settings))
+      throw new Error('settings must be a plain object');
+    if (typeof settings.name !== 'string') throw new Error('settings.name must be a string');
     if (!this.#tables[settings.name]) {
       const newTable = new PuddySqlQuery();
       newTable.setDb(settings, this);
@@ -352,11 +374,14 @@ class PuddySqlInstance {
    * instance associated with the table name. If the table does not exist, it returns `null`.
    *
    * @param {string} tableName - The name of the table to retrieve.
-   * @returns {PuddySqlQuery|null} The `PuddySqlQuery` instance associated with the table, or `null` if the table does not exist.
+   * @returns {PuddySqlQuery} The `PuddySqlQuery` instance associated with the table, or `null` if the table does not exist.
    */
   getTable(tableName) {
-    if (this.#tables[tableName]) return this.#tables[tableName];
-    return null;
+    if (typeof tableName !== 'string' || tableName.trim() === '')
+      throw new Error('tableName must be a non-empty string');
+    const table = this.#tables[tableName];
+    if (!table) throw new Error(`Table "${tableName}" does not exist`);
+    return table;
   }
 
   /**
@@ -380,14 +405,13 @@ class PuddySqlInstance {
    * or `false` if the table does not exist.
    *
    * @param {string} tableName - The name of the table to remove.
-   * @returns {boolean} `true` if the table was removed, `false` if the table does not exist.
    */
   removeTable(tableName) {
-    if (this.#tables[tableName]) {
-      delete this.#tables[tableName];
-      return true;
-    }
-    return false;
+    if (typeof tableName !== 'string' || tableName.trim() === '')
+      throw new Error('tableName must be a non-empty string');
+    if (!this.#tables[tableName])
+      throw new Error(`Table "${tableName}" does not exist and cannot be removed`);
+    delete this.#tables[tableName];
   }
 
   /**
@@ -398,15 +422,14 @@ class PuddySqlInstance {
    * the table from the internal `#tables` object.
    *
    * @param {string} tableName - The name of the table to drop.
-   * @returns {Promise<boolean>} Resolves to `true` if the table was dropped and removed successfully, or `false` if the table does not exist.
    */
   async dropTable(tableName) {
-    if (this.#tables[tableName]) {
-      const result = await this.#tables[tableName].dropTable();
-      this.removeTable(tableName);
-      return result;
-    }
-    return false;
+    if (typeof tableName !== 'string' || tableName.trim() === '')
+      throw new TypeError('tableName must be a non-empty string');
+    const table = this.#tables[tableName];
+    if (!table) throw new Error(`Table "${tableName}" does not exist and cannot be dropped`);
+    await table.dropTable();
+    this.removeTable(tableName);
   }
 
   /**
@@ -415,9 +438,10 @@ class PuddySqlInstance {
    * This gives direct access to the internal database connection (PostgreSQL `Client` or SQLite3 `Database`),
    * which can be useful for advanced queries or database-specific operations not covered by this wrapper.
    *
-   * @returns {Object|null} The internal database instance, or `null` if not initialized.
+   * @returns {Database|PgPool} The internal database instance, or `null` if not initialized.
    */
   getDb() {
+    if (!this.#db) throw new Error('Database instance is not initialized');
     return this.#db;
   }
 
@@ -448,10 +472,10 @@ class PuddySqlInstance {
    * - `'postgre'` if using PostgreSQL
    * - `null` if no engine has been initialized yet
    *
-   * @returns {string|null} The name of the current SQL engine or `null` if none is set.
+   * @returns {string} The name of the current SQL engine or `null` if none is set.
    */
   getSqlEngine() {
-    return this.#sqlEngine || null;
+    return this.#sqlEngine;
   }
 
   /**
@@ -490,15 +514,28 @@ class PuddySqlInstance {
    * These methods internally wrap around the provided `db` object's asynchronous methods (`all`, `get`, `run`),
    * returning promises that resolve with the expected results or `null` on invalid data.
    *
-   * @param {Object} db - A SQLite3 database wrapper that exposes `all`, `get`, and `run` methods returning Promises.
+   * @param {Database} db - A SQLite3 database wrapper that exposes `all`, `get`, and `run` methods returning Promises.
    * @throws {Error} If a SQL engine has already been set for this instance.
    */
   setSqlite3(db) {
+    if (!(db instanceof Database)) throw new Error('Invalid type for db. Expected a Sqlite3.');
     if (!this.#sqlEngine) {
       this.#sqlEngine = 'sqlite3';
+
+      /**
+       * Checks if the given error is a connection error.
+       *
+       * @param {any} err - The error object to evaluate.
+       * @returns {boolean} Returns true if the error is a connection error.
+       */
       const isConnectionError = (err) => this.isConnectionError(err);
 
-      // Event error detector
+      /**
+       * Emits a 'connection-error' event if the error is related to connection issues.
+       *
+       * @param {any} err - The error object to check and possibly emit.
+       * @returns {void}
+       */
       const rejectConnection = (reject, err) => {
         if (isConnectionError(err)) event.emit('connection-error', err);
         reject(err);
@@ -506,12 +543,32 @@ class PuddySqlInstance {
       const event = this.#events;
       const getId = () => this.#debugCount++;
       const isDebug = () => this.#debug;
+
+      /**
+       * Sends SQL debug information to the console, including query and parameters.
+       *
+       * @param {number} id - The debug operation ID.
+       * @param {string|null} debugName - An optional label to identify the debug context.
+       * @param {string} query - The SQL query being executed.
+       * @param {any[]} params - The parameters passed to the query.
+       * @returns {void}
+       */
       const sendSqlDebug = (id, debugName, query, params) => {
         if (isDebug()) {
           console.log(this.#debugConsoleText(id, debugName), params);
           console.log(this.#debugSql(query));
         }
       };
+
+      /**
+       * Sends SQL result debug information to the console.
+       *
+       * @param {number} id - The debug operation ID.
+       * @param {string|null} debugName - An optional label to identify the debug context.
+       * @param {string|null} type - Optional descriptor of the operation type.
+       * @param {any} data - The result data to output.
+       * @returns {void}
+       */
       const sendSqlDebugResult = (id, debugName, type, data) => {
         if (isDebug())
           console.log(
@@ -528,7 +585,7 @@ class PuddySqlInstance {
        * Executes a query expected to return multiple rows.
        *
        * @param {string} query - The SQL query to execute.
-       * @param {Array} [params=[]] - Optional query parameters.
+       * @param {any[*]} [params=[]] - Optional query parameters.
        * @returns {Promise<Array<Object>|null>} Resolves with an array of result rows or null if invalid.
        */
       this.all = async function (query, params = [], debugName = null) {
@@ -548,8 +605,8 @@ class PuddySqlInstance {
        * Executes a query expected to return a single row.
        *
        * @param {string} query - The SQL query to execute.
-       * @param {Array} [params=[]] - Optional query parameters.
-       * @returns {Promise<Object|null>} Resolves with the result row or null if not a valid object.
+       * @param {any[*]} [params=[]] - Optional query parameters.
+       * @returns {Promise<Record<any, any>|null>} Resolves with the result row or null if not a valid object.
        */
       this.get = async function (query, params = [], debugName = null) {
         return new Promise((resolve, reject) => {
@@ -568,8 +625,8 @@ class PuddySqlInstance {
        * Executes a query that modifies the database (e.g., INSERT, UPDATE, DELETE).
        *
        * @param {string} query - The SQL query to execute.
-       * @param {Array} params - Query parameters.
-       * @returns {Promise<Object|null>} Resolves with the result object or null if invalid.
+       * @param {any[*]} params - Query parameters.
+       * @returns {Promise<Record<any, any>|null>} Resolves with the result object or null if invalid.
        */
       this.run = async function (query, params, debugName = null) {
         return new Promise((resolve, reject) => {
@@ -622,15 +679,28 @@ class PuddySqlInstance {
    * This method sets the engine to "postgre" and defines the `all`, `get`, and `run` methods,
    * wrapping around the provided `db` interface.
    *
-   * @param {Object} db - A PostgreSQL database instance that exposes `open()` and `query()` methods.
+   * @param {PgPool} db - A PostgreSQL database instance that exposes `open()` and `query()` methods.
    * @throws {Error} If a SQL engine is already set for this instance.
    */
   setPostgre(db) {
+    if (!(db instanceof pg.Pool)) throw new Error('Invalid type for db. Expected a PostgreSQL.');
     if (!this.#sqlEngine) {
       this.#sqlEngine = 'postgre';
+
+      /**
+       * Checks if the given error is a connection error.
+       *
+       * @param {any} err - The error object to evaluate.
+       * @returns {boolean} Returns true if the error is a connection error.
+       */
       const isConnectionError = (err) => this.isConnectionError(err);
 
-      // Event error detector
+      /**
+       * Emits a 'connection-error' event if the error is related to connection issues.
+       *
+       * @param {any} err - The error object to check and possibly emit.
+       * @returns {void}
+       */
       const rejectConnection = (err) => {
         if (isConnectionError(err)) event.emit('connection-error', err);
       };
@@ -639,12 +709,32 @@ class PuddySqlInstance {
 
       const getId = () => this.#debugCount++;
       const isDebug = () => this.#debug;
+
+      /**
+       * Sends SQL debug information to the console, including query and parameters.
+       *
+       * @param {number} id - The debug operation ID.
+       * @param {string|null} debugName - An optional label to identify the debug context.
+       * @param {string} query - The SQL query being executed.
+       * @param {any[]} params - The parameters passed to the query.
+       * @returns {void}
+       */
       const sendSqlDebug = (id, debugName, query, params) => {
         if (isDebug()) {
           console.log(this.#debugConsoleText(id, debugName), params);
           console.log(this.#debugSql(query));
         }
       };
+
+      /**
+       * Sends SQL result debug information to the console.
+       *
+       * @param {number} id - The debug operation ID.
+       * @param {string|null} debugName - An optional label to identify the debug context.
+       * @param {string|null} type - Optional descriptor of the operation type.
+       * @param {any} data - The result data to output.
+       * @returns {void}
+       */
       const sendSqlDebugResult = (id, debugName, type, data) => {
         if (isDebug())
           console.log(
@@ -661,11 +751,10 @@ class PuddySqlInstance {
        * Executes a query expected to return multiple rows.
        *
        * @param {string} query - The SQL query to execute.
-       * @param {Array} [params=[]] - Optional query parameters.
+       * @param {any[*]} [params=[]] - Optional query parameters.
        * @returns {Promise<Array<Object>|null>} Resolves with an array of result rows or null if invalid.
        */
       this.all = async function (query, params = [], debugName = null) {
-        await db.open(); // Ensure the connection is open
         try {
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
@@ -682,11 +771,10 @@ class PuddySqlInstance {
        * Executes a query expected to return a single row.
        *
        * @param {string} query - The SQL query to execute.
-       * @param {Array} [params=[]] - Optional query parameters.
-       * @returns {Promise<Object|null>} Resolves with the first row of the result or null if not found.
+       * @param {any[*]} [params=[]] - Optional query parameters.
+       * @returns {Promise<Record<any, any>|null>} Resolves with the first row of the result or null if not found.
        */
       this.get = async function (query, params = [], debugName = null) {
-        await db.open(); // Ensure the connection is open
         try {
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
@@ -705,11 +793,10 @@ class PuddySqlInstance {
        * Executes a query without expecting a specific row result.
        *
        * @param {string} query - The SQL query to execute.
-       * @param {Array} params - Query parameters.
-       * @returns {Promise<Object|null>} Resolves with the result object or null if invalid.
+       * @param {any[*]} params - Query parameters.
+       * @returns {Promise<Record<any, any>|null>} Resolves with the result object or null if invalid.
        */
       this.run = async function (query, params, debugName = null) {
-        await db.open(); // Ensure the connection is open
         try {
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
@@ -731,10 +818,11 @@ class PuddySqlInstance {
    * @function
    * @async
    * @param {string} query - The SQL query to execute.
-   * @param {Array} [params] - The parameters to bind to the query.
-   * @returns {Promise<Array>} A promise that resolves to an array of rows.
+   * @param {any[*]} [params] - The parameters to bind to the query.
+   * @returns {Promise<any[*]>} A promise that resolves to an array of rows.
    * @throws {Error} Throws an error if the query fails.
    */
+  // @ts-ignore
   all = (query, params) => new Promise((resolve) => resolve(null));
 
   /**
@@ -742,10 +830,11 @@ class PuddySqlInstance {
    * @function
    * @async
    * @param {string} query - The SQL query to execute.
-   * @param {Array} [params] - The parameters to bind to the query.
-   * @returns {Promise<Object>} A promise that resolves to a single row object.
+   * @param {any[*]} [params] - The parameters to bind to the query.
+   * @returns {Promise<Record<any, any>|null>} A promise that resolves to a single row object.
    * @throws {Error} Throws an error if the query fails.
    */
+  // @ts-ignore
   get = (query, params) => new Promise((resolve) => resolve(null));
 
   /**
@@ -753,10 +842,11 @@ class PuddySqlInstance {
    * @function
    * @async
    * @param {string} query - The SQL query to execute.
-   * @param {Array} params - The parameters to bind to the query.
-   * @returns {Promise<Object>} A promise that resolves to the result of the query execution.
+   * @param {any[*]} params - The parameters to bind to the query.
+   * @returns {Promise<Record<any, any>|null>} A promise that resolves to the result of the query execution.
    * @throws {Error} Throws an error if the query fails.
    */
+  // @ts-ignore
   run = (query, params) => new Promise((resolve) => resolve(null));
 }
 

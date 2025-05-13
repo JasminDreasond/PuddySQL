@@ -6,6 +6,17 @@ const { Client } = pg;
 const clientBase = new Client();
 
 /**
+ * @typedef {Object} TableSettings
+ * @property {string} [name]
+ * @property {string} [select='*'] - SELECT clause configuration. Can be simplified; complex expressions are auto-formatted.
+ * @property {string|null} [join=null] - Optional JOIN table name.
+ * @property {string|null} [joinCompare='t.key = j.key'] - Condition used to match JOIN tables.
+ * @property {string|null} [order=null] - Optional ORDER BY clause.
+ * @property {string} [id='key'] - Primary key column name.
+ * @property {string|null} [subId=null] - Optional secondary key column name.
+ */
+
+/**
  * TinySQLQuery is a queries operating system developed to operate in a specific table.
  */
 class PuddySqlQuery {
@@ -932,14 +943,8 @@ class PuddySqlQuery {
    * Set or update database settings by merging with existing ones.
    * This function ensures safe fallback values and formats the SELECT clause.
    *
-   * @param {object} [settings={}] - Partial configuration to apply. Will be merged with current settings.
-   * @param {string} [settings.select='*'] - SELECT clause configuration. Can be simplified; complex expressions are auto-formatted.
-   * @param {string|null} [settings.join=null] - Optional JOIN table name.
-   * @param {string|null} [settings.joinCompare='t.key = j.key'] - Condition used to match JOIN tables.
-   * @param {string|null} [settings.order=null] - Optional ORDER BY clause.
-   * @param {string} [settings.id='key'] - Primary key column name.
-   * @param {string|null} [settings.subId=null] - Optional secondary key column name.
-   * @param {object} - PuddySql Instance.
+   * @param {TableSettings} [settings={}] - Partial configuration to apply. Will be merged with current settings.
+   * @param {Object} db - PuddySql Instance.
    */
   setDb(settings = {}, db = null) {
     if (db) this.#db = db;
