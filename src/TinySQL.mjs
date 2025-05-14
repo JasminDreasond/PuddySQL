@@ -816,11 +816,12 @@ class PuddySqlInstance {
    * @async
    * @param {string} query - The SQL query to execute.
    * @param {any[*]} [params] - The parameters to bind to the query.
+   * @param {string} [debugName] - Optional label or context name for the debug log.
    * @returns {Promise<any[*]>} A promise that resolves to an array of rows.
    * @throws {Error} Throws an error if the query fails.
    */
   // @ts-ignore
-  all = (query, params) => new Promise((resolve) => resolve(null));
+  all = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
 
   /**
    * Executes a query to get a single row from a database table.
@@ -828,11 +829,12 @@ class PuddySqlInstance {
    * @async
    * @param {string} query - The SQL query to execute.
    * @param {any[*]} [params] - The parameters to bind to the query.
+   * @param {string} [debugName] - Optional label or context name for the debug log.
    * @returns {Promise<Record<any, any>|null>} A promise that resolves to a single row object.
    * @throws {Error} Throws an error if the query fails.
    */
   // @ts-ignore
-  get = (query, params) => new Promise((resolve) => resolve(null));
+  get = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
 
   /**
    * Executes an SQL statement to modify the database (e.g., INSERT, UPDATE).
@@ -840,11 +842,12 @@ class PuddySqlInstance {
    * @async
    * @param {string} query - The SQL query to execute.
    * @param {any[*]} params - The parameters to bind to the query.
+   * @param {string} [debugName] - Optional label or context name for the debug log.
    * @returns {Promise<Record<any, any>|null>} A promise that resolves to the result of the query execution.
    * @throws {Error} Throws an error if the query fails.
    */
   // @ts-ignore
-  run = (query, params) => new Promise((resolve) => resolve(null));
+  run = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
 }
 
 export default PuddySqlInstance;
