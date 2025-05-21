@@ -37,6 +37,38 @@ class PuddySqlInstance {
   #events = new EventEmitter();
 
   /**
+   * Important instance used to make system event emitter.
+   * @type {EventEmitter}
+   */
+  #sysEvents = new EventEmitter();
+  #sysEventsUsed = false;
+
+  /**
+   * Provides access to a secure internal EventEmitter for subclass use only.
+   *
+   * This method exposes a dedicated EventEmitter instance intended specifically for subclasses
+   * that extend the main class. It prevents subclasses from accidentally or intentionally using
+   * the primary class's public event system (`emit`), which could lead to unpredictable behavior
+   * or interference in the base class's event flow.
+   *
+   * For security and consistency, this method is designed to be accessed only once.
+   * Multiple accesses are blocked to avoid leaks or misuse of the internal event bus.
+   *
+   * @returns {EventEmitter} A special internal EventEmitter instance for subclass use.
+   * @throws {Error} If the method is called more than once.
+   */
+  getSysEvents() {
+    if (this.#sysEventsUsed)
+      throw new Error(
+        'Access denied: getSysEvents() can only be called once. ' +
+          'This restriction ensures subclass event isolation and prevents accidental interference ' +
+          'with the main class event emitter.',
+      );
+    this.#sysEventsUsed = true;
+    return this.#sysEvents;
+  }
+
+  /**
    * Enables or disables console color output for debug messages.
    *
    * @param {boolean} state - Set to `true` to enable colors, or `false` to disable.
@@ -222,6 +254,86 @@ class PuddySqlInstance {
   removeListener(event, listener) {
     this.#events.removeListener(event, listener);
     return this;
+  }
+
+  /**
+   * Removes all listeners for a specific event, or all events if no event is specified.
+   * @param {string | symbol} [event] - The name of the event. If omitted, all listeners from all events will be removed.
+   * @returns {this} The current class instance (for chaining).
+   */
+  removeAllListeners(event) {
+    this.#events.removeAllListeners(event);
+    return this;
+  }
+
+  /**
+   * Returns the number of times the given `listener` is registered for the specified `event`.
+   * If no `listener` is passed, returns how many listeners are registered for the `event`.
+   * @param {string | symbol} eventName - The name of the event.
+   * @param {Function} [listener] - Optional listener function to count.
+   * @returns {number} Number of matching listeners.
+   */
+  listenerCount(eventName, listener) {
+    return this.#events.listenerCount(eventName, listener);
+  }
+
+  /**
+   * Adds a listener function to the **beginning** of the listeners array for the specified event.
+   * The listener is called every time the event is emitted.
+   * @param {string | symbol} eventName - The event name.
+   * @param {ListenerCallback} listener - The callback function.
+   * @returns {this} The current class instance (for chaining).
+   */
+  prependListener(eventName, listener) {
+    this.#events.prependListener(eventName, listener);
+    return this;
+  }
+
+  /**
+   * Adds a **one-time** listener function to the **beginning** of the listeners array.
+   * The next time the event is triggered, this listener is removed and then invoked.
+   * @param {string | symbol} eventName - The event name.
+   * @param {ListenerCallback} listener - The callback function.
+   * @returns {this} The current class instance (for chaining).
+   */
+  prependOnceListener(eventName, listener) {
+    this.#events.prependOnceListener(eventName, listener);
+    return this;
+  }
+
+  /**
+   * Returns an array of event names for which listeners are currently registered.
+   * @returns {(string | symbol)[]} Array of event names.
+   */
+  eventNames() {
+    return this.#events.eventNames();
+  }
+
+  /**
+   * Gets the current maximum number of listeners allowed for any single event.
+   * @returns {number} The max listener count.
+   */
+  getMaxListeners() {
+    return this.#events.getMaxListeners();
+  }
+
+  /**
+   * Returns a copy of the listeners array for the specified event.
+   * @param {string | symbol} eventName - The event name.
+   * @returns {Function[]} An array of listener functions.
+   */
+  listeners(eventName) {
+    return this.#events.listeners(eventName);
+  }
+
+  /**
+   * Returns a copy of the internal listeners array for the specified event,
+   * including wrapper functions like those used by `.once()`.
+   * @param {string | symbol} eventName - The event name.
+   * @returns {Function[]} An array of raw listener functions.
+   */
+  rawListeners(eventName) {
+    return this.#events.rawListeners(eventName);
   }
 
   /**
