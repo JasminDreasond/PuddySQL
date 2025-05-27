@@ -21,7 +21,7 @@
     "pg": "^8.14.1",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
-    "tiny-essentials": "^1.8.5"
+    "tiny-essentials": "^1.10.0"
   },
   "keywords": [],
   "scripts": {
