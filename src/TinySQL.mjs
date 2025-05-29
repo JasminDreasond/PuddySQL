@@ -2,7 +2,7 @@ import { open } from 'sqlite';
 import { Database } from 'sqlite3';
 import * as pg from 'pg';
 import { EventEmitter } from 'events';
-import { objType } from 'tiny-essentials';
+import { isJsonObject } from 'tiny-essentials';
 
 import PuddySqlQuery from './TinySqlQuery.mjs';
 
@@ -610,7 +610,7 @@ class PuddySqlInstance {
 
       // Graceful shutdown on process termination
       process.on('SIGINT', async () => {
-        await this.#db.close().catch(() => {});
+        await this.destroy();
       });
     } else throw new Error('SQL has already been initialized in this instance!');
   }
@@ -724,7 +724,7 @@ class PuddySqlInstance {
           db.get(query, params)
             .then((result) => {
               sendSqlDebugResult(id, debugName, '', result);
-              resolve(objType(result, 'object') ? result : null);
+              resolve(isJsonObject(result) ? result : null);
             })
             .catch((err) => rejectConnection(reject, err));
         });
@@ -744,7 +744,7 @@ class PuddySqlInstance {
           db.run(query, params)
             .then((result) => {
               sendSqlDebugResult(id, debugName, '', result);
-              resolve(objType(result, 'object') ? result : null);
+              resolve(isJsonObject(result) ? result : null);
             })
             .catch((err) => rejectConnection(reject, err));
         });
@@ -774,7 +774,7 @@ class PuddySqlInstance {
 
       // Attach handler to close DB on process termination
       process.on('SIGINT', async () => {
-        await this.#db.end().catch(() => {});
+        await this.destroy();
       });
 
       // Connect to the PostgreSQL database
@@ -869,7 +869,7 @@ class PuddySqlInstance {
           sendSqlDebug(id, debugName, query, params);
           const res = await db.query(query, params);
           sendSqlDebugResult(id, debugName, '', res);
-          return objType(res, 'object') && Array.isArray(res.rows) ? res.rows : null;
+          return isJsonObject(res) && Array.isArray(res.rows) ? res.rows : null;
         } catch (err) {
           rejectConnection(err);
           throw err;
@@ -889,7 +889,7 @@ class PuddySqlInstance {
           sendSqlDebug(id, debugName, query, params);
           const res = await db.query(query, params);
           sendSqlDebugResult(id, debugName, '', res);
-          return objType(res, 'object') && Array.isArray(res.rows) && objType(res.rows[0], 'object')
+          return isJsonObject(res) && Array.isArray(res.rows) && isJsonObject(res.rows[0])
             ? res.rows[0]
             : null;
         } catch (err) {
@@ -911,7 +911,7 @@ class PuddySqlInstance {
           sendSqlDebug(id, debugName, query, params);
           const res = await db.query(query, params);
           sendSqlDebugResult(id, debugName, '', res);
-          return objType(res, 'object') ? res : null;
+          return isJsonObject(res) ? res : null;
         } catch (err) {
           rejectConnection(err);
           throw err;
@@ -960,6 +960,27 @@ class PuddySqlInstance {
    */
   // @ts-ignore
   run = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
+
+  /**
+   * Gracefully destroys the current instance by:
+   * - Removing all internal and system event listeners;
+   * - Properly closing the database connection based on the SQL engine in use.
+   *
+   * Supports both PostgreSQL (`postgre`) and SQLite3 (`sqlite3`) engines.
+   * Errors during database disconnection are caught and logged to the console.
+   *
+   * @returns {Promise<void>} Resolves when all cleanup operations are complete.
+   */
+  async destroy() {
+    this.#events.removeAllListeners();
+    this.#sysEvents.removeAllListeners();
+
+    const sqlEngine = this.getSqlEngine();
+    if (typeof sqlEngine === 'string') {
+      if (sqlEngine === 'postgre') await this.#db.end().catch(console.error);
+      if (sqlEngine === 'sqlite3') await this.#db.close().catch(console.error);
+    }
+  }
 }
 
 export default PuddySqlInstance;

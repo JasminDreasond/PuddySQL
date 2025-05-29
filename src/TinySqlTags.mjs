@@ -1,4 +1,7 @@
-import { objType } from 'tiny-essentials';
+import { isJsonObject } from 'tiny-essentials';
+
+/** @typedef {{ title: string; parser?: function(string): string }} SpecialQuery */
+/** @typedef {import('./TinySqlQuery.mjs').Pcache} Pcache */
 
 /**
  * @class PuddySqlTags
@@ -24,22 +27,30 @@ import { objType } from 'tiny-essentials';
  */
 class PuddySqlTags {
   /**
+   * json_each
+   *
+   * @type {string|null}
+   */
+  jsonEach = 'json_array_elements_text';
+
+  /** @type {SpecialQuery[]} */
+  specialQueries = [];
+
+  defaultColumn = '';
+  wildcardA = '*';
+  wildcardB = '?';
+  noRepeat = false;
+  useJsonEach = true;
+  parseLimit = -1;
+
+  /** @type {string|null} */
+  defaultValueName = null;
+
+  /**
    * Creates an instance of the PuddySqlTags class.
    * @param {string} defaultColumn - The default column name to use in queries (default is 'tags').
    */
   constructor(defaultColumn = 'tags') {
-    this.defaultValueName = null;
-    this.useJsonEach = true;
-    this.noRepeat = false;
-    this.parseLimit = -1;
-
-    // json_each
-    this.jsonEach = 'json_array_elements_text';
-    this.specialQueries = [];
-
-    this.wildcardA = '*';
-    this.wildcardB = '?';
-
     this.setColumnName(defaultColumn);
   }
 
@@ -126,22 +137,26 @@ class PuddySqlTags {
    * Internally sets `this.noRepeat` to the inverse of the boolean value provided.
    * If value is not a boolean, resets `noRepeat` to null.
    *
-   * @param {boolean|null} [value=null] - True to allow repeated tags, false to prevent them.
+   * @param {boolean} value - True to allow repeated tags, false to prevent them.
    */
-  setCanRepeat(value = null) {
-    this.noRepeat = typeof value === 'boolean' ? !value : null;
+  setCanRepeat(value) {
+    if (typeof value !== 'boolean') throw new Error('value must be a boolean');
+    this.noRepeat = !value;
   }
 
   /**
    * Sets the wildcard symbol used in the search expression.
    * Only updates if the value is a string.
    *
-   * @param {'wildcardA'|'wildcardB'|null} [where=null] - Which wildcard to set.
-   * @param {string|null} [value=null] - The wildcard symbol (e.g. '*', '%').
+   * @param {'wildcardA'|'wildcardB'} where - Which wildcard to set.
+   * @param {string|null} value - The wildcard symbol (e.g. '*', '%').
    */
-  setWildcard(where = null, value = null) {
-    if (where === 'wildcardA') this.wildcardA = typeof value === 'string' ? value : null;
-    if (where === 'wildcardB') this.wildcardB = typeof value === 'string' ? value : null;
+  setWildcard(where, value) {
+    if (where !== 'wildcardA' && where !== 'wildcardB')
+      throw new Error("where must be 'wildcardA' or 'wildcardB'");
+    if (typeof value !== 'string') throw new Error('value must be a string');
+    if (where === 'wildcardA') this.wildcardA = value;
+    if (where === 'wildcardB') this.wildcardB = value;
   }
 
   /**
@@ -152,8 +167,9 @@ class PuddySqlTags {
    * @param {string} config.title - The unique title identifier of the special query.
    */
   addSpecialQuery(config) {
-    if (objType(config, 'object') && typeof config.title === 'string')
-      this.specialQueries.push(config);
+    if (!isJsonObject(config) || typeof config.title !== 'string')
+      throw new Error('config must be an object with a string "title"');
+    this.specialQueries.push(config);
   }
 
   /**
@@ -163,6 +179,7 @@ class PuddySqlTags {
    * @param {string} title - The title of the special query to be removed.
    */
   removeSpecialQuery(title) {
+    if (typeof title !== 'string') throw new Error('title must be a string');
     const index = this.specialQueries.findIndex((item) => item.title === title);
     if (index > -1) this.specialQueries.splice(index, 1);
   }
@@ -173,7 +190,8 @@ class PuddySqlTags {
    * @param {string} value - Column name to be used as default (e.g. 'tags').
    */
   setColumnName(value) {
-    this.defaultColumn = typeof value === 'string' ? value : '';
+    if (typeof value !== 'string') throw new Error('value must be a string');
+    this.defaultColumn = value;
   }
 
   /**
@@ -192,7 +210,8 @@ class PuddySqlTags {
    * @param {number} value - Maximum number of items to parse (use -1 for no limit).
    */
   setParseLimit(value) {
-    this.parseLimit = typeof value === 'number' ? value : -1;
+    if (typeof value !== 'number') throw new Error('value must be a number');
+    this.parseLimit = value;
   }
 
   /**
@@ -211,26 +230,29 @@ class PuddySqlTags {
    * @param {boolean} value - Whether to use `json_each()` in tag conditions.
    */
   setUseJsonEach(value) {
-    this.useJsonEach = typeof value === 'boolean' ? value : 'null';
+    if (typeof value !== 'boolean') throw new Error('value must be a boolean');
+    this.useJsonEach = value;
   }
 
   /**
    * Sets the alias name used in `EXISTS` subqueries, typically referencing `value`.
    *
-   * @param {string|null} value - The alias to use in SQL subqueries (e.g. 'value').
+   * @param {string} value - The alias to use in SQL subqueries (e.g. 'value').
    */
   setValueName(value) {
-    this.defaultValueName = typeof value === 'string' ? value : null;
+    if (typeof value !== 'string') throw new Error('value must be a string');
+    this.defaultValueName = value;
   }
 
   /**
    * Sets the raw SQL string used for the `json_each()` expression.
    * This is used for custom SQL generation.
    *
-   * @param {string|null} value - The SQL snippet (e.g. "json_each(tags)").
+   * @param {string} value - The SQL snippet (e.g. "json_each(tags)").
    */
   setJsonEach(value) {
-    this.jsonEach = typeof value === 'string' ? value : null;
+    if (value !== null && typeof value !== 'string') throw new Error('value must be a string');
+    this.jsonEach = value;
   }
 
   /**
@@ -243,10 +265,7 @@ class PuddySqlTags {
    * The method returns a string representing the SQL WHERE clause, and updates `pCache.values`
    * with the filtered values in proper order for parameterized queries.
    *
-   * @param {Object} [pCache={ index: 1, values: [] }] - Parameter cache used to build the WHERE clause.
-   * @param {number} [pCache.index=1] - Starting parameter index for SQL placeholders (e.g., `$1`, `$2`...).
-   * @param {Array<any>} [pCache.values=[]] - Collected values for SQL query binding.
-   *
+   * @param {Pcache} [pCache={ index: 1, values: [] }] - Placeholder cache object.
    * @param {Object} [group={}] - Tag group definition to build the clause from.
    * @param {string} [group.column] - SQL column name for tag data (defaults to `this.getColumnName()`).
    * @param {string} [group.valueName] - Alias used for JSON values (defaults to `this.defaultValueName`).
@@ -255,8 +274,8 @@ class PuddySqlTags {
    *
    * @returns {string} The generated SQL condition string (e.g., `(EXISTS (...)) AND (NOT EXISTS (...))`).
    */
-  #parseWhere(pCache = { index: 1, values: [] }, group = {}) {
-    if (!objType(pCache, 'object') || !group || typeof group !== 'object') return '';
+  parseWhere(group = {}, pCache = { index: 1, values: [] }) {
+    if (!isJsonObject(pCache) || !isJsonObject(group)) return '';
     if (typeof pCache.index !== 'number') pCache.index = 1;
     if (!Array.isArray(pCache.values)) pCache.values = [];
 
@@ -306,31 +325,6 @@ class PuddySqlTags {
 
     // Only AND between the conditions generated
     return where.length ? `(${where.join(' AND ')})` : '1';
-  }
-
-  /**
-   * Public wrapper for building an SQL WHERE clause based on tag filters.
-   *
-   * This method delegates to the internal `#parseWhere` method, allowing external
-   * access while maintaining control over the formatting and value extraction for
-   * SQL parameter binding.
-   *
-   * Useful when you want to pass dynamic filters into SQL queries using prepared statements.
-   *
-   * @param {Object} [group={}] - Tag group configuration used to generate WHERE clause logic.
-   * @param {Array<string|string[]>} [group.include] - List of tag strings or OR-groups to include.
-   * @param {string} [group.column] - Column name to search (defaults to internal config).
-   * @param {string} [group.valueName] - Alias name for JSON values (defaults to internal config).
-   * @param {boolean} [group.allowWildcards=false] - Whether to interpret wildcard symbols.
-   *
-   * @param {Object} [pCache={ index: 1, values: [] }] - Cache object for parameter bindings.
-   * @param {number} [pCache.index=1] - Initial parameter index (e.g., `$1`, `$2`, ...).
-   * @param {Array<any>} [pCache.values=[]] - Values that will be used in the SQL query.
-   *
-   * @returns {string} SQL WHERE clause constructed from the group definition.
-   */
-  parseWhere(group, pCache) {
-    return this.#parseWhere(pCache, group);
   }
 
   /**
