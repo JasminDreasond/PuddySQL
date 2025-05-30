@@ -1382,7 +1382,7 @@ class PuddySqlQuery {
    * If an ID is provided, returns only the matching record(s) up to the specified count.
    * @param {number} count - Number of rows to retrieve.
    * @param {string|number|null} [filterId=null] - Optional ID to filter by.
-   * @param {string|string[]|object} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
+   * @param {SelectQuery} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
    * @returns {Promise<FreeObj[]>}
    */
   async getAmount(count, filterId = null, selectValue = '*') {
@@ -1405,7 +1405,7 @@ class PuddySqlQuery {
    * Get all records from the table.
    * If an ID is provided, returns only the matching record(s).
    * @param {string|number|null} [filterId=null] - Optional ID to filter by.
-   * @param {string|string[]|object} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
+   * @param {SelectQuery} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
    * @returns {Promise<FreeObj[]>}
    */
   async getAll(filterId = null, selectValue = '*') {
