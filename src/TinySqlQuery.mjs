@@ -7,7 +7,22 @@ const { Client } = pg;
 const clientBase = new Client();
 
 /**
- * @typedef {FreeObj} TagCriteria
+ * Tag group definition used to build dynamic SQL clauses for tag filtering.
+ *
+ * @typedef {Object} TagCriteria - Tag group definition to build the clause from.
+ * @property {string} [group.column] - SQL column name for tag data (defaults to `this.getColumnName()`).
+ * @property {string} [group.valueName] - Alias used for JSON values (defaults to `this.defaultValueName`).
+ * @property {boolean} [group.allowWildcards=false] - Whether wildcards are allowed in matching.
+ * @property {Array<string|string[]>} [group.include=[]] - Tag values or grouped OR conditions to include.
+ */
+
+/**
+ * Represents the result of a paginated query.
+ *
+ * @typedef {Object} PaginationResult
+ * @property {unknown[]} items - Array of items returned for the current page.
+ * @property {number} totalPages - Total number of available pages based on the query and per-page limit.
+ * @property {number} totalItems - Total number of items matching the query without pagination.
  */
 
 /**
@@ -21,7 +36,7 @@ const clientBase = new Client();
  *     values?: string[];                // List of column names to select.
  *     boost?: {                         // Boost configuration for weighted ranking.
  *       alias?: string;                 // The alias to associate with the boost configuration.
- *       value?: boostValue[];           // List of boost rules to apply.
+ *       value?: BoostValue[];           // List of boost rules to apply.
  *     };
  *   } |
  *   null
@@ -61,7 +76,7 @@ const clientBase = new Client();
 /**
  * Represents a boosting rule for weighted query ranking.
  *
- * @typedef {Object} boostValue
+ * @typedef {Object} BoostValue
  * @property {string[]} columns - List of columns to apply the boost on.
  * @property {string} operator - Operator used in the condition (e.g., '=', 'LIKE').
  * @property {string} value - Value to match in the condition.
@@ -74,7 +89,7 @@ const clientBase = new Client();
  * - `compare`: The ON clause condition.
  * - `type` (optional): One of the supported JOIN types (e.g., 'left', 'inner'). Defaults to 'left'.
  *
- * @typedef {{ table: string; compare: string; type?: string; }} joinObj
+ * @typedef {{ table: string; compare: string; type?: string; }} JoinObj
  */
 
 /**
@@ -488,7 +503,7 @@ class PuddySqlQuery {
     /**
      * Boost parser helper
      *
-     * @param {boostValue[]} boostArray
+     * @param {BoostValue[]} boostArray
      * @param {string} alias
      * @returns {string}
      */
@@ -1129,8 +1144,9 @@ class PuddySqlQuery {
   escapeValuesFix(v, name) {
     const column = this.#table?.[name];
     const type = column.type || '';
-    if (typeof this.#jsonEscapeFix[type] !== 'function') return v;
-    else return this.#jsonEscapeFix[type](v);
+    const func = this.#jsonEscapeFix[type];
+    if (typeof func !== 'function') return v;
+    else return func(v);
   }
 
   /**
@@ -1414,7 +1430,7 @@ class PuddySqlQuery {
    * @param {number} perPage - The number of items per page.
    * @param {number} page - The current page number (starting from 1).
    * @param {string} queryName - The query name to insert into the sql debug.
-   * @returns {Promise<{ items: any[], totalPages: number, totalItems: number }>}
+   * @returns {Promise<PaginationResult>}
    */
   async execPagination(query, params, perPage, page, queryName = '') {
     if (typeof query !== 'string')
@@ -1434,10 +1450,18 @@ class PuddySqlQuery {
 
     // Count total items
     const countQuery = `SELECT COUNT(*) as total FROM (${query}) AS count_wrapper`;
-    // @ts-ignore
-    const { total } = !isZero
+    const countResult = !isZero
       ? await db.get(countQuery, params, `pagination-${queryName}`)
       : { total: 0 };
+
+    const total = isJsonObject(countResult)
+      ? typeof countResult.total === 'number' &&
+        !Number.isNaN(countResult.total) &&
+        Number.isFinite(countResult.total) &&
+        countResult.total >= 0
+        ? countResult.total
+        : 0
+      : 0;
 
     // Fetch paginated items
     const paginatedQuery = `${query} LIMIT ? OFFSET ?`;
@@ -1446,6 +1470,7 @@ class PuddySqlQuery {
       : [];
 
     const totalPages = !isZero ? Math.ceil(total / perPage) : 0;
+    for (const index in items) this.resultChecker(items[index]);
 
     return {
       items,
@@ -1654,12 +1679,12 @@ class PuddySqlQuery {
    * - If `join` is an array of objects: generates multiple JOINs with aliases (`j1`, `j2`, ...).
    * - If `join` is invalid or empty: falls back to `insertJoin()` using internal settings.
    *
-   * @param {joinObj|joinObj[]|string|null} [join] - The join configuration(s).
+   * @param {JoinObj|JoinObj[]|string|null} [join] - The join configuration(s).
    * @returns {string} One or more JOIN SQL snippets.
    */
   parseJoin(join) {
     /**
-     * @param {joinObj} j
+     * @param {JoinObj} j
      * @param {number} idx
      * @returns {string}
      */
@@ -1688,6 +1713,10 @@ class PuddySqlQuery {
   }
 
   /**
+   * @typedef {{ page: number, pages: number, total: number, position: number, item?: FreeObj }} FindResult
+   */
+
+  /**
    * Finds the first item matching the filter, along with its position, page, and total info.
    * Uses a single SQL query to calculate everything efficiently.
    *
@@ -1700,8 +1729,8 @@ class PuddySqlQuery {
    * @param {number} [searchData.perPage] - Number of items per page.
    * @param {SelectQuery} [searchData.select='*'] - Which columns to select. Set to null to skip item data.
    * @param {string} [searchData.order] - SQL ORDER BY clause. Defaults to configured order.
-   * @param {string|joinObj|joinObj[]} [searchData.join] - JOIN definitions with table, compare, and optional type.
-   * @returns {Promise<{ page: number, pages: number, total: number, position: number, item?: object } | null>}
+   * @param {string|JoinObj|JoinObj[]} [searchData.join] - JOIN definitions with table, compare, and optional type.
+   * @returns {Promise<FindResult | null>}
    */
   async find(searchData = {}) {
     const db = this.getDb();
@@ -1779,6 +1808,7 @@ class PuddySqlQuery {
     const position = parseInt(row.position);
     const page = Math.floor((position - 1) / perPage) + 1;
 
+    /** @type {FindResult} */
     const response = { page, pages, total, position };
 
     // If selectValue is NOT null, return the item
@@ -1805,16 +1835,16 @@ class PuddySqlQuery {
    * @param {Object} [searchData={}] - Main search configuration.
    * @param {FreeObj} [searchData.q={}] - Nested criteria object.
    *        Can be a flat object style or grouped with `{ group: 'AND'|'OR', conditions: [...] }`.
-   * @param {TagCriteria[]|TagCriteria|null} [searchData.tagCriteria] - One or multiple tag criteria groups.
-   * @param {string[]} [searchData.tagCriteriaOps] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
+   * @param {TagCriteria[]|TagCriteria|null} [searchData.tagsQ] - One or multiple tag criteria groups.
+   * @param {string[]} [searchData.tagsOpsQ] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
    * @param {SelectQuery} [searchData.select='*'] - Defines which columns or expressions should be selected in the query.
    * @param {number|null} [searchData.perPage=null] - Number of results per page. If set, pagination is applied.
    * @param {number} [searchData.page=1] - Page number to retrieve when `perPage` is used.
    * @param {string} [searchData.order] - Custom `ORDER BY` clause (e.g. `'created_at DESC'`).
-   * @param {string|joinObj|joinObj[]} [searchData.join] - A string for single join or array of objects for multiple joins.
+   * @param {string|JoinObj|JoinObj[]} [searchData.join] - A string for single join or array of objects for multiple joins.
    *        Each object should contain `{ table: 'name', compare: 'ON clause' }`.
    * @param {number} [searchData.limit] - Max number of results to return (ignored when `perPage` is used).
-   * @returns {Promise<FreeObj[]>} - Result rows matching the query.
+   * @returns {Promise<FreeObj[]|PaginationResult>} - Result rows matching the query.
    *
    * @example
    * // Flat search:
@@ -1878,7 +1908,7 @@ class PuddySqlQuery {
       const operators = Array.isArray(tagCriteriaOps) ? tagCriteriaOps : [];
 
       tagCriteria.forEach((group, i) => {
-        const column = group?.column || 'tags'; // default name if not set
+        const column = typeof group.column === 'string' ? group.column : 'tags'; // default name if not set
         const tag = this.getTagEditor(column);
         if (!tag) return;
 

@@ -2,6 +2,7 @@ import { isJsonObject } from 'tiny-essentials';
 
 /** @typedef {{ title: string; parser?: function(string): string }} SpecialQuery */
 /** @typedef {import('./TinySqlQuery.mjs').Pcache} Pcache */
+/** @typedef {import('./TinySqlQuery.mjs').TagCriteria} TagCriteria */
 
 /**
  * @class PuddySqlTags
@@ -266,11 +267,7 @@ class PuddySqlTags {
    * with the filtered values in proper order for parameterized queries.
    *
    * @param {Pcache} [pCache={ index: 1, values: [] }] - Placeholder cache object.
-   * @param {Object} [group={}] - Tag group definition to build the clause from.
-   * @param {string} [group.column] - SQL column name for tag data (defaults to `this.getColumnName()`).
-   * @param {string} [group.valueName] - Alias used for JSON values (defaults to `this.defaultValueName`).
-   * @param {boolean} [group.allowWildcards=false] - Whether wildcards are allowed in matching.
-   * @param {Array<string|string[]>} [group.include=[]] - Tag values or grouped OR conditions to include.
+   * @param {TagCriteria} [group={}] - Tag group definition to build the clause from.
    *
    * @returns {string} The generated SQL condition string (e.g., `(EXISTS (...)) AND (NOT EXISTS (...))`).
    */
