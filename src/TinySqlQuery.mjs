@@ -4,6 +4,17 @@ import PuddySqlEngine from './SqlEngine.mjs';
 import PuddySqlTags from './TinySqlTags.mjs';
 
 /**
+ * Represents the result of a paginated SQL query to locate the exact position of a specific item.
+ *
+ * @typedef {Object} FindResult
+ * @property {number} page - The current page number where the item is located (starting from 1).
+ * @property {number} pages - The total number of pages available in the dataset.
+ * @property {number} total - The total number of items in the dataset.
+ * @property {number} position - The exact index position of the item in the entire dataset (starting from 0).
+ * @property {FreeObj} [item] - The actual item found, if included in the result.
+ */
+
+/**
  * Tag group definition used to build dynamic SQL clauses for tag filtering.
  *
  * @typedef {Object} TagCriteria - Tag group definition to build the clause from.
@@ -1708,10 +1719,6 @@ class PuddySqlQuery {
           ? join
           : this.insertJoin();
   }
-
-  /**
-   * @typedef {{ page: number, pages: number, total: number, position: number, item?: FreeObj }} FindResult
-   */
 
   /**
    * Finds the first item matching the filter, along with its position, page, and total info.
