@@ -1,3 +1,4 @@
+import { pg, sqlite3 } from './Modules.mjs';
 import PuddySqlEvents from './Events.mjs';
 import PuddySqlInstance from './TinySQL.mjs';
 import PuddySqlQuery from './TinySqlQuery.mjs';
@@ -8,6 +9,8 @@ class PuddySql {
   static Query = PuddySqlQuery;
   static Tags = PuddySqlTags;
   static Events = PuddySqlEvents;
+  static pg = pg;
+  static sqlite3 = sqlite3;
 
   /**
    * This constructor is intentionally blocked.

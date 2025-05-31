@@ -1,10 +1,7 @@
 import { isJsonObject } from 'tiny-essentials';
 import { pg } from './Modules.mjs';
-
 import PuddySqlInstance from './TinySQL.mjs';
 import PuddySqlTags from './TinySqlTags.mjs';
-
-const clientBase = new pg.Client();
 
 /**
  * Tag group definition used to build dynamic SQL clauses for tag filtering.
@@ -432,7 +429,7 @@ class PuddySqlQuery {
    *       - `weight` (number): numeric weight applied when condition matches (default: 1)
    *     - If `columns` is omitted, the `value` is treated as a raw SQL condition inserted directly into the CASE.
    *
-   * Escaping of all values is handled by `Client.escapeLiteral()` for SQL safety (PostgreSQL).
+   * Escaping of all values is handled by `pg.escapeLiteral()` for SQL safety (PostgreSQL).
    *
    * @param {SelectQuery} input - Select clause definition.
    * @returns {string} - A valid SQL SELECT clause string.
@@ -524,7 +521,7 @@ class PuddySqlQuery {
         if (opValue === 'IN') {
           const conditions = columns.map((col) => {
             if (Array.isArray(value)) {
-              const inList = value.map((v) => clientBase.escapeLiteral(v)).join(', ');
+              const inList = value.map((v) => pg.escapeLiteral(v)).join(', ');
               return `${col} IN (${inList})`;
             } else {
               console.warn(`IN operator expected array, got`, value);
@@ -533,7 +530,7 @@ class PuddySqlQuery {
           });
           cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
         } else {
-          const safeVal = clientBase.escapeLiteral(
+          const safeVal = pg.escapeLiteral(
             ['LIKE', 'ILIKE'].includes(opValue) ? `%${value}%` : value,
           );
           const conditions = columns.map((col) => `${col} ${operator} ${safeVal}`);
