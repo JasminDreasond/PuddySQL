@@ -1061,7 +1061,7 @@ class PuddySqlQuery {
    * - SQLite (uses `changes`)
    * - PostgreSQL (uses `rowCount`)
    *
-   * @type {Object<string, string>}
+   * @type {Record<string, string>}
    */
   #resultCounts = {
     sqlite3: 'changes',

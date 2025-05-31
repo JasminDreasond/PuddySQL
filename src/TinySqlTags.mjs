@@ -5,6 +5,30 @@ import { isJsonObject } from 'tiny-essentials';
 /** @typedef {import('./TinySqlQuery.mjs').TagCriteria} TagCriteria */
 
 /**
+ * Represents a key-value pair extracted from a special chunk format.
+ *
+ * @typedef {Object} SpecialFromChunks
+ * @property {string} key - The key or identifier extracted from the chunk.
+ * @property {string} value - The associated value linked to the key.
+ */
+
+/**
+ * Represents a collection of string chunks used in parsing or filtering.
+ *
+ * @typedef {Array<string | string[]>} Chunks
+ *
+ * A chunk can be a single string or an array of strings grouped as OR conditions.
+ */
+
+/**
+ * Result of parsing a string expression into a column and list of included values.
+ *
+ * @typedef {Object} ParseStringResult
+ * @property {string} column - The SQL column to which the values apply.
+ * @property {Chunks} include - List of values or grouped OR conditions to be included in the query.
+ */
+
+/**
  * @class PuddySqlTags
  * @description A powerful utility class for building advanced SQL WHERE clauses with support for tag-based filtering,
  * custom boolean logic, wildcard parsing, and special query handlers.
@@ -282,6 +306,12 @@ class PuddySqlTags {
     const allowWildcards = typeof group.allowWildcards === 'boolean' ? group.allowWildcards : false;
     const include = group.include || [];
 
+    /**
+     * @param {string} funcName
+     * @param {string} param
+     * @param {boolean} [useLike=false]
+     * @returns {string}
+     */
     const createQuery = (funcName, param, useLike = false) =>
       `${funcName} (SELECT 1 FROM ${
         this.useJsonEach
@@ -289,9 +319,14 @@ class PuddySqlTags {
           : `${tagsColumn} WHERE ${tagsColumn}.${tagsValue} ${useLike ? 'LIKE' : '='} ${param}`
       })`;
 
+    /**
+     * @param {string} tag
+     * @returns {{ param: string; usesWildcard: boolean; not: boolean; }}
+     */
     const filterTag = (tag) => {
       const not = tag.startsWith('!');
       const cleanTag = not ? tag.slice(1) : tag;
+      if (typeof pCache.index !== 'number') throw new Error('Invalid pCache index');
       const param = `$${pCache.index++}`;
 
       const usesWildcard =
@@ -303,6 +338,7 @@ class PuddySqlTags {
             .replaceAll(this.wildcardB, '_')
         : cleanTag;
 
+      if (!Array.isArray(pCache.values)) throw new Error('Invalid pCache values');
       pCache.values.push(filteredTag);
       return { param, usesWildcard, not };
     };
@@ -336,16 +372,20 @@ class PuddySqlTags {
    * It also updates the input chunks to remove already-processed terms and eliminate repetitions
    * when `noRepeat` mode is enabled.
    *
-   * @param {Array<string|string[]>} chunks - A list of search terms or OR-groups (e.g., ['pony', ['red', 'blue']]).
+   * @param {Chunks} chunks - A list of search terms or OR-groups (e.g., ['pony', ['red', 'blue']]).
    *
-   * @returns {Object} An object with:
+   * @returns {{ specials: SpecialFromChunks[] }} An object with:
    *   - `specials`: An array of extracted special queries `{ key, value }`.
    *   - one property for each defined group in `#tagInputs`, each holding an array of objects with extracted values.
    *     Example: `{ boosts: [{ term: "pony", boost: 2 }], specials: [...] }`
    */
   #extractSpecialsFromChunks(chunks) {
+    /** @type {SpecialFromChunks[]} */
     const specials = [];
+
+    /** @type {Record<string, { term: string; }[]>} */
     const outputGroups = {}; // Will store the dynamic groups
+    /** @type {Record<string, Set<string>>} */
     const uniqueMap = {}; // Will store the dynamic sets
 
     // Initiating sets for each group set in #tagInputs
@@ -444,7 +484,7 @@ class PuddySqlTags {
    *
    * @param {string} input - The user input string to parse.
    *
-   * @returns {Object} An object containing:
+   * @returns {ParseStringResult} An object containing:
    *   - `column`: The column name from `this.getColumnName()`.
    *   - `include`: Array of tags and OR-groups to include in the query.
    *   - Additional properties (e.g., `boosts`, `specials`) depending on matches in `#tagInputs` or `specialQueries`.
@@ -460,9 +500,13 @@ class PuddySqlTags {
    * ```
    */
   parseString(input) {
+    /** @type {Chunks} */
     const chunks = [];
-    let buffer = '';
+
+    /** @type {string[]} */
     let currentGroup = [];
+
+    let buffer = '';
     let inQuotes = false;
     let quoteChar = '';
     const uniqueTags = new Set(); // Para garantir que não existam tags duplicadas
@@ -565,7 +609,7 @@ class PuddySqlTags {
    *
    * @param {string} input - The raw user input string.
    *
-   * @returns {Object} A structured result object returned by `parseString()`,
+   * @returns {ParseStringResult} A structured result object returned by `parseString()`,
    *   containing keys like `column`, `include`, `specials`, `boosts`, etc., depending on
    *   the tags and expressions detected.
    *
