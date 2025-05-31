@@ -1,13 +1,12 @@
 import { open } from 'sqlite';
 import * as sqlite3 from 'sqlite3';
-import * as pg from 'pg';
+import { Pool } from 'pg';
 import { EventEmitter } from 'events';
 import { isJsonObject } from 'tiny-essentials';
 
 import PuddySqlQuery from './TinySqlQuery.mjs';
 
 const { Database } = sqlite3;
-const { Client } = pg;
 
 /** @typedef {import('pg').Pool} PgPool */
 /** @typedef {import('sqlite').Database} SqliteDb */
@@ -544,7 +543,7 @@ class PuddySqlInstance {
   /**
    * Returns the raw database instance currently in use.
    *
-   * This gives direct access to the internal database connection (PostgreSQL `Client` or SQLite3 `Database`),
+   * This gives direct access to the internal database connection (PostgreSQL `Pool` or SQLite3 `Database`),
    * which can be useful for advanced queries or database-specific operations not covered by this wrapper.
    *
    * @returns {SqliteDb|PgPool} The internal database instance, or `null` if not initialized.
@@ -756,19 +755,19 @@ class PuddySqlInstance {
   /**
    * Initializes a PostgreSQL client and sets up the SQL engine for this instance.
    *
-   * This method creates a new PostgreSQL `Client` using the given configuration,
+   * This method creates a new PostgreSQL `Pool` using the given configuration,
    * connects to the database, and assigns the SQL engine behavior using `setPostgre()`.
    * It also attaches a `SIGINT` listener to gracefully close the database connection
    * when the process is terminated.
    *
    * @param {Object} config - PostgreSQL client configuration object.
-   *                          Must be compatible with the `pg` Client constructor.
+   *                          Must be compatible with the `pg` Pool constructor.
    * @throws {Error} If a SQL engine is already initialized for this instance.
    */
   async initPostgre(config) {
     if (!this.#sqlEngine) {
       /** @type {PgPool} */
-      this.#db = new Client(config);
+      this.#db = new Pool(config);
 
       // Set up the SQL methods (all, get, run)
       this.setPostgre(this.#db);
@@ -793,7 +792,7 @@ class PuddySqlInstance {
    * @throws {Error} If a SQL engine is already set for this instance.
    */
   setPostgre(db) {
-    if (!(db instanceof pg.Pool)) throw new Error('Invalid type for db. Expected a PostgreSQL.');
+    if (!(db instanceof Pool)) throw new Error('Invalid type for db. Expected a PostgreSQL.');
     if (!this.#sqlEngine) {
       this.#sqlEngine = 'postgre';
 
