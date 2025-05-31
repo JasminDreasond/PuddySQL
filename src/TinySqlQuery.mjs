@@ -1,8 +1,9 @@
-import { Client } from 'pg';
+import * as pg from 'pg';
 import { isJsonObject } from 'tiny-essentials';
 import PuddySqlInstance from './TinySQL.mjs';
 import PuddySqlTags from './TinySqlTags.mjs';
 
+const { Client } = pg;
 const clientBase = new Client();
 
 /**
