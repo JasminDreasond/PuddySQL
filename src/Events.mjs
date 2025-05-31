@@ -6,7 +6,7 @@ class PuddySqlEvents {
   /**
    * This class is not meant to be instantiated.
    *
-   * TinyOlmEvents is a static-only class. All its members should be accessed directly through the class.
+   * PuddySqlEvents is a static-only class. All its members should be accessed directly through the class.
    *
    * @throws {Error} Always throws an error saying you can't summon it like a tiny pudding.
    */
