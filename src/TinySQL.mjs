@@ -1,12 +1,9 @@
 import { open } from 'sqlite';
-import * as sqlite3 from 'sqlite3';
-import { Pool } from 'pg';
 import { EventEmitter } from 'events';
 import { isJsonObject } from 'tiny-essentials';
 
+import { pg, sqlite3 } from './Modules.mjs';
 import PuddySqlQuery from './TinySqlQuery.mjs';
-
-const { Database } = sqlite3;
 
 /** @typedef {import('pg').Pool} PgPool */
 /** @typedef {import('sqlite').Database} SqliteDb */
@@ -602,7 +599,7 @@ class PuddySqlInstance {
       /** @type {SqliteDb} */
       this.#db = await open({
         filename: filePath,
-        driver: Database,
+        driver: sqlite3.Database,
       });
 
       // Set SQL methods (all, get, run)
@@ -626,7 +623,8 @@ class PuddySqlInstance {
    * @throws {Error} If a SQL engine has already been set for this instance.
    */
   setSqlite3(db) {
-    if (!(db instanceof Database)) throw new Error('Invalid type for db. Expected a Sqlite3.');
+    if (!(db instanceof sqlite3.Database))
+      throw new Error('Invalid type for db. Expected a Sqlite3.');
     if (!this.#sqlEngine) {
       this.#sqlEngine = 'sqlite3';
 
@@ -767,7 +765,7 @@ class PuddySqlInstance {
   async initPostgre(config) {
     if (!this.#sqlEngine) {
       /** @type {PgPool} */
-      this.#db = new Pool(config);
+      this.#db = new pg.Pool(config);
 
       // Set up the SQL methods (all, get, run)
       this.setPostgre(this.#db);
@@ -792,7 +790,7 @@ class PuddySqlInstance {
    * @throws {Error} If a SQL engine is already set for this instance.
    */
   setPostgre(db) {
-    if (!(db instanceof Pool)) throw new Error('Invalid type for db. Expected a PostgreSQL.');
+    if (!(db instanceof pg.Pool)) throw new Error('Invalid type for db. Expected a PostgreSQL.');
     if (!this.#sqlEngine) {
       this.#sqlEngine = 'postgre';
 

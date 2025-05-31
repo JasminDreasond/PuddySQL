@@ -1,10 +1,10 @@
-import * as pg from 'pg';
 import { isJsonObject } from 'tiny-essentials';
+import { pg } from './Modules.mjs';
+
 import PuddySqlInstance from './TinySQL.mjs';
 import PuddySqlTags from './TinySqlTags.mjs';
 
-const { Client } = pg;
-const clientBase = new Client();
+const clientBase = new pg.Client();
 
 /**
  * Tag group definition used to build dynamic SQL clauses for tag filtering.
