@@ -1,11 +1,12 @@
 import { open } from 'sqlite';
-import { Database } from 'sqlite3';
+import * as sqlite3 from 'sqlite3';
 import * as pg from 'pg';
 import { EventEmitter } from 'events';
 import { isJsonObject } from 'tiny-essentials';
 
 import PuddySqlQuery from './TinySqlQuery.mjs';
 
+const { Database } = sqlite3;
 const { Client } = pg;
 
 /** @typedef {import('pg').Pool} PgPool */
