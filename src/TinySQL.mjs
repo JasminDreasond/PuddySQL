@@ -1,4 +1,4 @@
-import { open } from 'sqlite';
+import { open, Database } from 'sqlite';
 import { EventEmitter } from 'events';
 import { isJsonObject } from 'tiny-essentials';
 
@@ -347,7 +347,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * Example output:
    * [SQL][123] [DEBUG] [MyDebug] [OK]
    */
-  #debugConsoleText(id, debugName, status) {
+  #debugConsoleText(id, debugName = '', status = '') {
     if (typeof id !== 'string' && typeof id !== 'number')
       throw new Error('id must be a string or number');
     if (typeof debugName !== 'string') throw new Error('debugName must be a string if provided');
@@ -570,8 +570,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * @throws {Error} If a SQL engine has already been set for this instance.
    */
   setSqlite3(db) {
-    if (!(db instanceof sqlite3.Database))
-      throw new Error('Invalid type for db. Expected a Sqlite3.');
+    if (!(db instanceof Database)) throw new Error('Invalid type for db. Expected a Sqlite3.');
     if (this.isSqlEngineEmpty()) {
       this.setSqlEngine('sqlite3');
 

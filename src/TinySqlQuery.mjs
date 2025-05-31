@@ -172,7 +172,7 @@ class PuddySqlQuery {
    */
   getDb() {
     // @ts-ignore
-    if (this.#db !== null || !(this.#db instanceof PuddySqlEngine)) {
+    if (this.#db === null || !(this.#db instanceof PuddySqlEngine)) {
       throw new Error(
         'Database instance is invalid or uninitialized. Expected an instance of PuddySqlEngine.',
       );
