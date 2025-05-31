@@ -1,6 +1,6 @@
 import { isJsonObject } from 'tiny-essentials';
 import { pg } from './Modules.mjs';
-import PuddySqlInstance from './TinySQL.mjs';
+import PuddySqlEngine from './SqlEngine.mjs';
 import PuddySqlTags from './TinySqlTags.mjs';
 
 /**
@@ -123,7 +123,7 @@ class PuddySqlQuery {
   /** @type {Record<string, function(string) : string>} */
   #customValFunc = {};
 
-  /** @type {PuddySqlInstance|null} */
+  /** @type {PuddySqlEngine|null} */
   #db = null;
 
   /**
@@ -153,17 +153,17 @@ class PuddySqlQuery {
   /**
    * Safely retrieves the internal database instance.
    *
-   * This method ensures that the current internal `#db` is a valid instance of `PuddySqlInstance`.
+   * This method ensures that the current internal `#db` is a valid instance of `PuddySqlEngine`.
    * If the internal value is invalid or was not properly initialized, an error is thrown.
    *
-   * @returns {PuddySqlInstance} The internal database instance.
-   * @throws {Error} If the internal database is not a valid `PuddySqlInstance`.
+   * @returns {PuddySqlEngine} The internal database instance.
+   * @throws {Error} If the internal database is not a valid `PuddySqlEngine`.
    */
   getDb() {
     // @ts-ignore
-    if (this.#db !== null || !(this.#db instanceof PuddySqlInstance)) {
+    if (this.#db !== null || !(this.#db instanceof PuddySqlEngine)) {
       throw new Error(
-        'Database instance is invalid or uninitialized. Expected an instance of PuddySqlInstance.',
+        'Database instance is invalid or uninitialized. Expected an instance of PuddySqlEngine.',
       );
     }
     return this.#db;
@@ -1016,11 +1016,11 @@ class PuddySqlQuery {
    * This function ensures safe fallback values and formats the SELECT clause.
    *
    * @param {TableSettings} [settings={}] - Partial configuration to apply. Will be merged with current settings.
-   * @param {PuddySqlInstance} [db] - PuddySql Instance.
+   * @param {PuddySqlEngine} [db] - PuddySql Instance.
    */
   setDb(settings = {}, db) {
     if (!isJsonObject(settings)) throw new Error('Settings must be a plain object.');
-    if (!(db instanceof PuddySqlInstance))
+    if (!(db instanceof PuddySqlEngine))
       throw new Error('Invalid type for db. Expected a PuddySql.');
     this.#db = db;
 

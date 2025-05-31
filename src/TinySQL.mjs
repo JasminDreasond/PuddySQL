@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { isJsonObject } from 'tiny-essentials';
 
 import { pg, sqlite3 } from './Modules.mjs';
+import PuddySqlEngine from './SqlEngine.mjs';
 import PuddySqlQuery from './TinySqlQuery.mjs';
 
 /** @typedef {import('pg').Pool} PgPool */
@@ -12,11 +13,12 @@ import PuddySqlQuery from './TinySqlQuery.mjs';
  * PuddySql is a wrapper for basic SQL operations on a local storage abstraction.
  * It supports inserting, updating, deleting, querying and joining JSON-based structured data.
  */
-class PuddySqlInstance {
-  /** @typedef {import('./TinySqlQuery.mjs').TableSettings} TableSettings */
+class PuddySqlInstance extends PuddySqlEngine {
+  constructor() {
+    super();
+  }
 
-  /** @type {string} */
-  #sqlEngine = '';
+  /** @typedef {import('./TinySqlQuery.mjs').TableSettings} TableSettings */
 
   // @ts-ignore
   #db;
@@ -334,47 +336,6 @@ class PuddySqlInstance {
   }
 
   /**
-   * Checks if the given error message indicates a connection error based on the SQL engine in use.
-   *
-   * This method evaluates if the provided error message contains any known connection error codes
-   * for the current SQL engine (PostgreSQL or SQLite3).
-   *
-   * @param {Error} err - The error message to check.
-   * @returns {boolean} True if the error message matches any known connection error codes; otherwise, false.
-   */
-  isConnectionError(err) {
-    if (typeof err !== 'object' || err === null || Array.isArray(err))
-      throw new Error('err must be a plain object');
-    const sqlEngine = this.getSqlEngine();
-    if (typeof sqlEngine === 'string') {
-      // PostgreSQL
-      if (sqlEngine === 'postgre') {
-        const codes = [
-          'ECONNREFUSED',
-          'ENOTFOUND',
-          'EHOSTUNREACH',
-          'ETIMEDOUT',
-          'EPIPE',
-          '28P01',
-          '3D000',
-          '08006',
-          '08001',
-          '08004',
-          '53300',
-          '57P01',
-        ];
-        // @ts-ignore
-        for (const code of codes) if (err.code === code) return true;
-      }
-
-      // Sqlite3
-      if (sqlEngine === 'sqlite3' && typeof err.message === 'string')
-        return err.message.includes('SQLITE_CANTOPEN');
-    }
-    return false;
-  }
-
-  /**
    * Formats a debug message string with colored ANSI tags for the console.
    * Useful for consistent and readable debug logging with identifiers.
    *
@@ -570,20 +531,6 @@ class PuddySqlInstance {
   }
 
   /**
-   * Returns the current SQL engine identifier used by this instance.
-   *
-   * Possible return values:
-   * - `'sqlite3'` if using SQLite3
-   * - `'postgre'` if using PostgreSQL
-   * - `null` if no engine has been initialized yet
-   *
-   * @returns {string} The name of the current SQL engine or `null` if none is set.
-   */
-  getSqlEngine() {
-    return this.#sqlEngine;
-  }
-
-  /**
    * Initializes an SQLite3 >= 3.35.0 database connection and sets up the SQL engine for this instance.
    *
    * This method creates a new SQLite3 database using the specified file path (or in-memory by default),
@@ -595,7 +542,7 @@ class PuddySqlInstance {
    * @throws {Error} If a SQL engine has already been initialized for this instance.
    */
   async initSqlite3(filePath = ':memory:') {
-    if (!this.#sqlEngine) {
+    if (this.isSqlEngineEmpty()) {
       /** @type {SqliteDb} */
       this.#db = await open({
         filename: filePath,
@@ -625,8 +572,8 @@ class PuddySqlInstance {
   setSqlite3(db) {
     if (!(db instanceof sqlite3.Database))
       throw new Error('Invalid type for db. Expected a Sqlite3.');
-    if (!this.#sqlEngine) {
-      this.#sqlEngine = 'sqlite3';
+    if (this.isSqlEngineEmpty()) {
+      this.setSqlEngine('sqlite3');
 
       /**
        * Checks if the given error is a connection error.
@@ -763,7 +710,7 @@ class PuddySqlInstance {
    * @throws {Error} If a SQL engine is already initialized for this instance.
    */
   async initPostgre(config) {
-    if (!this.#sqlEngine) {
+    if (this.isSqlEngineEmpty()) {
       /** @type {PgPool} */
       this.#db = new pg.Pool(config);
 
@@ -791,8 +738,8 @@ class PuddySqlInstance {
    */
   setPostgre(db) {
     if (!(db instanceof pg.Pool)) throw new Error('Invalid type for db. Expected a PostgreSQL.');
-    if (!this.#sqlEngine) {
-      this.#sqlEngine = 'postgre';
+    if (!this.getSqlEngine()) {
+      this.setSqlEngine('postgre');
 
       /**
        * Checks if the given error is a connection error.
@@ -921,45 +868,6 @@ class PuddySqlInstance {
   }
 
   /**
-   * Executes a query to get all rows from a database table.
-   * @function
-   * @async
-   * @param {string} query - The SQL query to execute.
-   * @param {any[*]} [params] - The parameters to bind to the query.
-   * @param {string} [debugName] - Optional label or context name for the debug log.
-   * @returns {Promise<any[*]>} A promise that resolves to an array of rows.
-   * @throws {Error} Throws an error if the query fails.
-   */
-  // @ts-ignore
-  all = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
-
-  /**
-   * Executes a query to get a single row from a database table.
-   * @function
-   * @async
-   * @param {string} query - The SQL query to execute.
-   * @param {any[*]} [params] - The parameters to bind to the query.
-   * @param {string} [debugName] - Optional label or context name for the debug log.
-   * @returns {Promise<Record<any, any>|null>} A promise that resolves to a single row object.
-   * @throws {Error} Throws an error if the query fails.
-   */
-  // @ts-ignore
-  get = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
-
-  /**
-   * Executes an SQL statement to modify the database (e.g., INSERT, UPDATE).
-   * @function
-   * @async
-   * @param {string} query - The SQL query to execute.
-   * @param {any[*]} params - The parameters to bind to the query.
-   * @param {string} [debugName] - Optional label or context name for the debug log.
-   * @returns {Promise<Record<any, any>|null>} A promise that resolves to the result of the query execution.
-   * @throws {Error} Throws an error if the query fails.
-   */
-  // @ts-ignore
-  run = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
-
-  /**
    * Gracefully destroys the current instance by:
    * - Removing all internal and system event listeners;
    * - Properly closing the database connection based on the SQL engine in use.
@@ -974,10 +882,8 @@ class PuddySqlInstance {
     this.#sysEvents.removeAllListeners();
 
     const sqlEngine = this.getSqlEngine();
-    if (typeof sqlEngine === 'string') {
-      if (sqlEngine === 'postgre') await this.#db.end().catch(console.error);
-      if (sqlEngine === 'sqlite3') await this.#db.close().catch(console.error);
-    }
+    if (sqlEngine === 'postgre') await this.#db.end().catch(console.error);
+    if (sqlEngine === 'sqlite3') await this.#db.close().catch(console.error);
   }
 }
 
