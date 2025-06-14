@@ -3,8 +3,8 @@ import { EventEmitter } from 'events';
 import { isJsonObject } from 'tiny-essentials';
 
 import { pg, sqlite3 } from './Modules.mjs';
-import PuddySqlEngine from './SqlEngine.mjs';
-import PuddySqlQuery from './TinySqlQuery.mjs';
+import PuddySqlEngine from './PuddySqlEngine.mjs';
+import PuddySqlQuery from './PuddySqlQuery.mjs';
 
 /** @typedef {import('pg').Pool} PgPool */
 /** @typedef {import('sqlite').Database} SqliteDb */
@@ -18,7 +18,7 @@ class PuddySqlInstance extends PuddySqlEngine {
     super();
   }
 
-  /** @typedef {import('./TinySqlQuery.mjs').TableSettings} TableSettings */
+  /** @typedef {import('./PuddySqlQuery.mjs').TableSettings} TableSettings */
 
   // @ts-ignore
   #db;

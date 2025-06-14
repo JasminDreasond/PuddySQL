@@ -1,8 +1,8 @@
 import { pg, sqlite3 } from './Modules.mjs';
-import PuddySqlEvents from './Events.mjs';
-import PuddySqlInstance from './TinySQL.mjs';
-import PuddySqlQuery from './TinySqlQuery.mjs';
-import PuddySqlTags from './TinySqlTags.mjs';
+import PuddySqlEvents from './PuddySqlEvents.mjs';
+import PuddySqlInstance from './PuddySqlInstance.mjs';
+import PuddySqlQuery from './PuddySqlQuery.mjs';
+import PuddySqlTags from './PuddySqlTags.mjs';
 
 class PuddySql {
   static Instance = PuddySqlInstance;

@@ -1,8 +1,8 @@
 import { isJsonObject } from 'tiny-essentials';
 
 /** @typedef {{ title: string; parser?: function(string): string }} SpecialQuery */
-/** @typedef {import('./TinySqlQuery.mjs').Pcache} Pcache */
-/** @typedef {import('./TinySqlQuery.mjs').TagCriteria} TagCriteria */
+/** @typedef {import('./PuddySqlQuery.mjs').Pcache} Pcache */
+/** @typedef {import('./PuddySqlQuery.mjs').TagCriteria} TagCriteria */
 
 /**
  * Represents a key-value pair extracted from a special chunk format.

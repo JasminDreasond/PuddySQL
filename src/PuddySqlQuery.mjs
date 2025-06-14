@@ -1,7 +1,7 @@
 import { isJsonObject } from 'tiny-essentials';
 import { pg } from './Modules.mjs';
-import PuddySqlEngine from './SqlEngine.mjs';
-import PuddySqlTags from './TinySqlTags.mjs';
+import PuddySqlEngine from './PuddySqlEngine.mjs';
+import PuddySqlTags from './PuddySqlTags.mjs';
 
 /**
  * Represents the result of a paginated SQL query to locate the exact position of a specific item.
