@@ -1038,9 +1038,7 @@ class PuddySqlQuery {
     const selectValue =
       typeof settings.select !== 'undefined'
         ? this.selectGenerator(settings.select)
-        : typeof this.#settings.select === 'string'
-          ? this.#settings.select
-          : '*';
+        : this.#settings?.select || '*';
 
     /** @type {Settings} */
     const newSettings = {
@@ -1108,15 +1106,16 @@ class PuddySqlQuery {
   async has(id, subId) {
     if (typeof id !== 'string' && typeof id !== 'number')
       throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
-    if (typeof subId !== 'string' && typeof subId !== 'number')
+    if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
       throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
     if (!this.#settings?.name || !this.#settings?.id)
       throw new Error('Invalid table settings: name and id must be defined.');
 
     const db = this.getDb();
-    const useSub = this.#settings.subId && subId ? true : false;
+    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
     const params = [id];
     const query = `SELECT COUNT(*) FROM ${this.#settings.name} WHERE ${this.#settings.id} = $1${useSub ? ` AND ${this.#settings.subId} = $2` : ''} LIMIT 1`;
+    // @ts-ignore
     if (useSub) params.push(subId);
 
     const result = await db.get(query, params, 'has');
@@ -1215,14 +1214,12 @@ class PuddySqlQuery {
 
     const setClause = columns.map((col, index) => `${col} = $${index + 1}`).join(', ');
 
-    const useSub =
-      typeof this.#settings.subId === 'string' &&
-      typeof valueObj[this.#settings.subId] !== 'undefined';
+    const useSub = this.#settings.subId && typeof valueObj[this.#settings.subId] !== 'undefined';
     const query = `UPDATE ${this.#settings.name} SET ${setClause} WHERE ${this.#settings.id} = $${columns.length + 1}${useSub ? ` AND ${this.#settings.subId} = $${columns.length + 2}` : ''}`;
 
     const params = [...values, id];
-    if (typeof this.#settings.subId === 'string' && useSub)
-      params.push(valueObj[this.#settings.subId]);
+    // @ts-ignore
+    if (useSub) params.push(valueObj[this.#settings.subId]);
 
     const result = await db.run(query, params, 'update');
     return this.getResultCount(result);
@@ -1325,14 +1322,15 @@ class PuddySqlQuery {
   async get(id, subId) {
     if (typeof id !== 'string' && typeof id !== 'number')
       throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
-    if (typeof subId !== 'string' && typeof subId !== 'number')
+    if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
       throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
 
     const db = this.getDb();
-    const useSub = this.#settings.subId && subId ? true : false;
+    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
     const params = [id];
     const query = `SELECT ${this.#settings.select} FROM ${this.#settings.name} t 
                      ${this.insertJoin()} WHERE t.${this.#settings.id} = $1${useSub ? ` AND t.${this.#settings.subId} = $2` : ''}`;
+    // @ts-ignore
     if (useSub) params.push(subId);
     const result = this.resultChecker(await db.get(query, params, 'get'));
     if (!result) return null;
@@ -1372,13 +1370,14 @@ class PuddySqlQuery {
   async delete(id, subId) {
     if (typeof id !== 'string' && typeof id !== 'number')
       throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
-    if (typeof subId !== 'string' && typeof subId !== 'number')
+    if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
       throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
 
     const db = this.getDb();
-    const useSub = this.#settings.subId && subId ? true : false;
+    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
     const query = `DELETE FROM ${this.#settings.name} WHERE ${this.#settings.id} = $1${useSub ? ` AND ${this.#settings.subId} = $2` : ''}`;
     const params = [id];
+    // @ts-ignore
     if (useSub) params.push(subId);
 
     const result = await db.run(query, params, 'delete');
@@ -1749,7 +1748,7 @@ class PuddySqlQuery {
     const order = searchData.order || this.#settings.order;
     const joinConfig = searchData.join || null;
 
-    if (!criteria || !isJsonObject(criteria)) return null;
+    if (!isJsonObject(criteria)) return null;
     if (typeof perPage !== 'number' || perPage < 1) throw new Error('Invalid perPage value');
 
     /** @type {Pcache} */
@@ -1766,7 +1765,7 @@ class PuddySqlQuery {
       tagCriteria.forEach((group, i) => {
         const column = typeof group.column === 'string' ? group.column : 'tags';
         const tag = this.getTagEditor(column);
-        if (!tag) return;
+        if (!(tag instanceof PuddySqlTags)) return;
 
         const clause = tag.parseWhere(group, pCache);
         if (!clause) return;
@@ -1914,7 +1913,7 @@ class PuddySqlQuery {
       tagCriteria.forEach((group, i) => {
         const column = typeof group.column === 'string' ? group.column : 'tags'; // default name if not set
         const tag = this.getTagEditor(column);
-        if (!tag) return;
+        if (!(tag instanceof PuddySqlTags)) return;
 
         const clause = tag.parseWhere(group, pCache);
         if (!clause) return;
@@ -1926,7 +1925,7 @@ class PuddySqlQuery {
     } else if (isJsonObject(tagCriteria)) {
       const column = typeof tagCriteria.column === 'string' ? tagCriteria.column : 'tags';
       const tag = this.getTagEditor(column);
-      if (tag) {
+      if (tag instanceof PuddySqlTags) {
         const clause = tag.parseWhere(tagCriteria, pCache);
         if (clause) whereParts.push(clause);
       }
