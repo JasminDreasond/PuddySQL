@@ -1,11 +1,39 @@
-import { objType } from 'tiny-essentials';
+import { isJsonObject } from 'tiny-essentials';
+
+/** @typedef {{ title: string; parser?: function(string): string }} SpecialQuery */
+/** @typedef {import('./PuddySqlQuery.mjs').Pcache} Pcache */
+/** @typedef {import('./PuddySqlQuery.mjs').TagCriteria} TagCriteria */
 
 /**
- * @class TinySqlTags
+ * Represents a key-value pair extracted from a special chunk format.
+ *
+ * @typedef {Object} SpecialFromChunks
+ * @property {string} key - The key or identifier extracted from the chunk.
+ * @property {string} value - The associated value linked to the key.
+ */
+
+/**
+ * Represents a collection of string chunks used in parsing or filtering.
+ *
+ * @typedef {Array<string | string[]>} Chunks
+ *
+ * A chunk can be a single string or an array of strings grouped as OR conditions.
+ */
+
+/**
+ * Result of parsing a string expression into a column and list of included values.
+ *
+ * @typedef {Object} ParseStringResult
+ * @property {string} column - The SQL column to which the values apply.
+ * @property {Chunks} include - List of values or grouped OR conditions to be included in the query.
+ */
+
+/**
+ * @class PuddySqlTags
  * @description A powerful utility class for building advanced SQL WHERE clauses with support for tag-based filtering,
  * custom boolean logic, wildcard parsing, and special query handlers.
  *
- * TinySqlTags provides a structured way to interpret and transform flexible user search input into robust SQL conditions,
+ * PuddySqlTags provides a structured way to interpret and transform flexible user search input into robust SQL conditions,
  * including support for parentheses grouping, AND/OR logic, special colon-based filters, and customizable weight systems
  * using symbolic operators. Designed with modularity and extensibility in mind, it also prevents unwanted repetitions and
  * allows precise control over column names, aliases, and JSON handling through `json_each`.
@@ -22,24 +50,32 @@ import { objType } from 'tiny-essentials';
  * Deep gratitude to the Derpibooru project for the inspiration, structure, and creativity
  * that influenced this tool. A tiny heartfelt thank you to **Nighty**. :3
  */
-class TinySqlTags {
+class PuddySqlTags {
   /**
-   * Creates an instance of the TinySqlTags class.
+   * json_each
+   *
+   * @type {string|null}
+   */
+  jsonEach = 'json_array_elements_text';
+
+  /** @type {SpecialQuery[]} */
+  specialQueries = [];
+
+  defaultColumn = '';
+  wildcardA = '*';
+  wildcardB = '?';
+  noRepeat = false;
+  useJsonEach = true;
+  parseLimit = -1;
+
+  /** @type {string|null} */
+  defaultValueName = null;
+
+  /**
+   * Creates an instance of the PuddySqlTags class.
    * @param {string} defaultColumn - The default column name to use in queries (default is 'tags').
    */
   constructor(defaultColumn = 'tags') {
-    this.defaultValueName = null;
-    this.useJsonEach = true;
-    this.noRepeat = false;
-    this.parseLimit = -1;
-
-    // json_each
-    this.jsonEach = 'json_array_elements_text';
-    this.specialQueries = [];
-
-    this.wildcardA = '*';
-    this.wildcardB = '?';
-
     this.setColumnName(defaultColumn);
   }
 
@@ -54,7 +90,6 @@ class TinySqlTags {
    * These mappings enable flexible handling of tags, where the symbols (`^`, `~`, etc.) can be used
    * to categorize tags dynamically and assign values to them based on their symbol.
    *
-   * @private
    * @type {Object<string, { list: string, valueKey: string }>}
    * @example
    * // Example usage:
@@ -127,22 +162,26 @@ class TinySqlTags {
    * Internally sets `this.noRepeat` to the inverse of the boolean value provided.
    * If value is not a boolean, resets `noRepeat` to null.
    *
-   * @param {boolean|null} [value=null] - True to allow repeated tags, false to prevent them.
+   * @param {boolean} value - True to allow repeated tags, false to prevent them.
    */
-  setCanRepeat(value = null) {
-    this.noRepeat = typeof value === 'boolean' ? !value : null;
+  setCanRepeat(value) {
+    if (typeof value !== 'boolean') throw new Error('value must be a boolean');
+    this.noRepeat = !value;
   }
 
   /**
    * Sets the wildcard symbol used in the search expression.
    * Only updates if the value is a string.
    *
-   * @param {'wildcardA'|'wildcardB'|null} [where=null] - Which wildcard to set.
-   * @param {string|null} [value=null] - The wildcard symbol (e.g. '*', '%').
+   * @param {'wildcardA'|'wildcardB'} where - Which wildcard to set.
+   * @param {string|null} value - The wildcard symbol (e.g. '*', '%').
    */
-  setWildcard(where = null, value = null) {
-    if (where === 'wildcardA') this.wildcardA = typeof value === 'string' ? value : null;
-    if (where === 'wildcardB') this.wildcardB = typeof value === 'string' ? value : null;
+  setWildcard(where, value) {
+    if (where !== 'wildcardA' && where !== 'wildcardB')
+      throw new Error("where must be 'wildcardA' or 'wildcardB'");
+    if (typeof value !== 'string') throw new Error('value must be a string');
+    if (where === 'wildcardA') this.wildcardA = value;
+    if (where === 'wildcardB') this.wildcardB = value;
   }
 
   /**
@@ -153,8 +192,9 @@ class TinySqlTags {
    * @param {string} config.title - The unique title identifier of the special query.
    */
   addSpecialQuery(config) {
-    if (objType(config, 'object') && typeof config.title === 'string')
-      this.specialQueries.push(config);
+    if (!isJsonObject(config) || typeof config.title !== 'string')
+      throw new Error('config must be an object with a string "title"');
+    this.specialQueries.push(config);
   }
 
   /**
@@ -164,6 +204,7 @@ class TinySqlTags {
    * @param {string} title - The title of the special query to be removed.
    */
   removeSpecialQuery(title) {
+    if (typeof title !== 'string') throw new Error('title must be a string');
     const index = this.specialQueries.findIndex((item) => item.title === title);
     if (index > -1) this.specialQueries.splice(index, 1);
   }
@@ -174,7 +215,8 @@ class TinySqlTags {
    * @param {string} value - Column name to be used as default (e.g. 'tags').
    */
   setColumnName(value) {
-    this.defaultColumn = typeof value === 'string' ? value : '';
+    if (typeof value !== 'string') throw new Error('value must be a string');
+    this.defaultColumn = value;
   }
 
   /**
@@ -193,7 +235,8 @@ class TinySqlTags {
    * @param {number} value - Maximum number of items to parse (use -1 for no limit).
    */
   setParseLimit(value) {
-    this.parseLimit = typeof value === 'number' ? value : -1;
+    if (typeof value !== 'number') throw new Error('value must be a number');
+    this.parseLimit = value;
   }
 
   /**
@@ -212,26 +255,29 @@ class TinySqlTags {
    * @param {boolean} value - Whether to use `json_each()` in tag conditions.
    */
   setUseJsonEach(value) {
-    this.useJsonEach = typeof value === 'boolean' ? value : 'null';
+    if (typeof value !== 'boolean') throw new Error('value must be a boolean');
+    this.useJsonEach = value;
   }
 
   /**
    * Sets the alias name used in `EXISTS` subqueries, typically referencing `value`.
    *
-   * @param {string|null} value - The alias to use in SQL subqueries (e.g. 'value').
+   * @param {string} value - The alias to use in SQL subqueries (e.g. 'value').
    */
   setValueName(value) {
-    this.defaultValueName = typeof value === 'string' ? value : null;
+    if (typeof value !== 'string') throw new Error('value must be a string');
+    this.defaultValueName = value;
   }
 
   /**
    * Sets the raw SQL string used for the `json_each()` expression.
    * This is used for custom SQL generation.
    *
-   * @param {string|null} value - The SQL snippet (e.g. "json_each(tags)").
+   * @param {string} value - The SQL snippet (e.g. "json_each(tags)").
    */
   setJsonEach(value) {
-    this.jsonEach = typeof value === 'string' ? value : null;
+    if (value !== null && typeof value !== 'string') throw new Error('value must be a string');
+    this.jsonEach = value;
   }
 
   /**
@@ -244,21 +290,13 @@ class TinySqlTags {
    * The method returns a string representing the SQL WHERE clause, and updates `pCache.values`
    * with the filtered values in proper order for parameterized queries.
    *
-   * @private
-   * @param {Object} [pCache={ index: 1, values: [] }] - Parameter cache used to build the WHERE clause.
-   * @param {number} [pCache.index=1] - Starting parameter index for SQL placeholders (e.g., `$1`, `$2`...).
-   * @param {Array<any>} [pCache.values=[]] - Collected values for SQL query binding.
-   *
-   * @param {Object} [group={}] - Tag group definition to build the clause from.
-   * @param {string} [group.column] - SQL column name for tag data (defaults to `this.getColumnName()`).
-   * @param {string} [group.valueName] - Alias used for JSON values (defaults to `this.defaultValueName`).
-   * @param {boolean} [group.allowWildcards=false] - Whether wildcards are allowed in matching.
-   * @param {Array<string|string[]>} [group.include=[]] - Tag values or grouped OR conditions to include.
+   * @param {Pcache} [pCache={ index: 1, values: [] }] - Placeholder cache object.
+   * @param {TagCriteria} [group={}] - Tag group definition to build the clause from.
    *
    * @returns {string} The generated SQL condition string (e.g., `(EXISTS (...)) AND (NOT EXISTS (...))`).
    */
-  #parseWhere(pCache = { index: 1, values: [] }, group = {}) {
-    if (!objType(pCache, 'object') || !group || typeof group !== 'object') return '';
+  parseWhere(group = {}, pCache = { index: 1, values: [] }) {
+    if (!isJsonObject(pCache) || !isJsonObject(group)) return '';
     if (typeof pCache.index !== 'number') pCache.index = 1;
     if (!Array.isArray(pCache.values)) pCache.values = [];
 
@@ -268,6 +306,12 @@ class TinySqlTags {
     const allowWildcards = typeof group.allowWildcards === 'boolean' ? group.allowWildcards : false;
     const include = group.include || [];
 
+    /**
+     * @param {string} funcName
+     * @param {string} param
+     * @param {boolean} [useLike=false]
+     * @returns {string}
+     */
     const createQuery = (funcName, param, useLike = false) =>
       `${funcName} (SELECT 1 FROM ${
         this.useJsonEach
@@ -275,9 +319,14 @@ class TinySqlTags {
           : `${tagsColumn} WHERE ${tagsColumn}.${tagsValue} ${useLike ? 'LIKE' : '='} ${param}`
       })`;
 
+    /**
+     * @param {string} tag
+     * @returns {{ param: string; usesWildcard: boolean; not: boolean; }}
+     */
     const filterTag = (tag) => {
       const not = tag.startsWith('!');
       const cleanTag = not ? tag.slice(1) : tag;
+      if (typeof pCache.index !== 'number') throw new Error('Invalid pCache index');
       const param = `$${pCache.index++}`;
 
       const usesWildcard =
@@ -289,6 +338,7 @@ class TinySqlTags {
             .replaceAll(this.wildcardB, '_')
         : cleanTag;
 
+      if (!Array.isArray(pCache.values)) throw new Error('Invalid pCache values');
       pCache.values.push(filteredTag);
       return { param, usesWildcard, not };
     };
@@ -311,31 +361,6 @@ class TinySqlTags {
   }
 
   /**
-   * Public wrapper for building an SQL WHERE clause based on tag filters.
-   *
-   * This method delegates to the internal `#parseWhere` method, allowing external
-   * access while maintaining control over the formatting and value extraction for
-   * SQL parameter binding.
-   *
-   * Useful when you want to pass dynamic filters into SQL queries using prepared statements.
-   *
-   * @param {Object} [group={}] - Tag group configuration used to generate WHERE clause logic.
-   * @param {Array<string|string[]>} [group.include] - List of tag strings or OR-groups to include.
-   * @param {string} [group.column] - Column name to search (defaults to internal config).
-   * @param {string} [group.valueName] - Alias name for JSON values (defaults to internal config).
-   * @param {boolean} [group.allowWildcards=false] - Whether to interpret wildcard symbols.
-   *
-   * @param {Object} [pCache={ index: 1, values: [] }] - Cache object for parameter bindings.
-   * @param {number} [pCache.index=1] - Initial parameter index (e.g., `$1`, `$2`, ...).
-   * @param {Array<any>} [pCache.values=[]] - Values that will be used in the SQL query.
-   *
-   * @returns {string} SQL WHERE clause constructed from the group definition.
-   */
-  parseWhere(group, pCache) {
-    return this.#parseWhere(pCache, group);
-  }
-
-  /**
    * Extracts special query elements and custom tag input groups from parsed search chunks.
    *
    * This method processes a list of parsed string chunks (which may contain modifiers, values,
@@ -347,17 +372,20 @@ class TinySqlTags {
    * It also updates the input chunks to remove already-processed terms and eliminate repetitions
    * when `noRepeat` mode is enabled.
    *
-   * @private
-   * @param {Array<string|string[]>} chunks - A list of search terms or OR-groups (e.g., ['pony', ['red', 'blue']]).
+   * @param {Chunks} chunks - A list of search terms or OR-groups (e.g., ['pony', ['red', 'blue']]).
    *
-   * @returns {Object} An object with:
+   * @returns {{ specials: SpecialFromChunks[] }} An object with:
    *   - `specials`: An array of extracted special queries `{ key, value }`.
    *   - one property for each defined group in `#tagInputs`, each holding an array of objects with extracted values.
    *     Example: `{ boosts: [{ term: "pony", boost: 2 }], specials: [...] }`
    */
   #extractSpecialsFromChunks(chunks) {
+    /** @type {SpecialFromChunks[]} */
     const specials = [];
+
+    /** @type {Record<string, { term: string; }[]>} */
     const outputGroups = {}; // Will store the dynamic groups
+    /** @type {Record<string, Set<string>>} */
     const uniqueMap = {}; // Will store the dynamic sets
 
     // Initiating sets for each group set in #tagInputs
@@ -456,7 +484,7 @@ class TinySqlTags {
    *
    * @param {string} input - The user input string to parse.
    *
-   * @returns {Object} An object containing:
+   * @returns {ParseStringResult} An object containing:
    *   - `column`: The column name from `this.getColumnName()`.
    *   - `include`: Array of tags and OR-groups to include in the query.
    *   - Additional properties (e.g., `boosts`, `specials`) depending on matches in `#tagInputs` or `specialQueries`.
@@ -472,9 +500,13 @@ class TinySqlTags {
    * ```
    */
   parseString(input) {
+    /** @type {Chunks} */
     const chunks = [];
-    let buffer = '';
+
+    /** @type {string[]} */
     let currentGroup = [];
+
+    let buffer = '';
     let inQuotes = false;
     let quoteChar = '';
     const uniqueTags = new Set(); // Para garantir que não existam tags duplicadas
@@ -577,7 +609,7 @@ class TinySqlTags {
    *
    * @param {string} input - The raw user input string.
    *
-   * @returns {Object} A structured result object returned by `parseString()`,
+   * @returns {ParseStringResult} A structured result object returned by `parseString()`,
    *   containing keys like `column`, `include`, `specials`, `boosts`, etc., depending on
    *   the tags and expressions detected.
    *
@@ -598,4 +630,4 @@ class TinySqlTags {
   }
 }
 
-export default TinySqlTags;
+export default PuddySqlTags;

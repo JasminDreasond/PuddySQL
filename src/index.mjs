@@ -1,5 +1,33 @@
-import TinySQL from './TinySQL.mjs';
-import TinySqlQuery from './TinySqlQuery.mjs';
-import TinySqlTags from './TinySqlTags.mjs';
+import { pg, sqlite3 } from './Modules.mjs';
+import PuddySqlEvents from './PuddySqlEvents.mjs';
+import PuddySqlInstance from './PuddySqlInstance.mjs';
+import PuddySqlQuery from './PuddySqlQuery.mjs';
+import PuddySqlTags from './PuddySqlTags.mjs';
 
-export { TinySqlQuery, TinySqlTags, TinySQL };
+class PuddySql {
+  static Instance = PuddySqlInstance;
+  static Query = PuddySqlQuery;
+  static Tags = PuddySqlTags;
+  static Events = PuddySqlEvents;
+  static pg = pg;
+  static sqlite3 = sqlite3;
+
+  /**
+   * This constructor is intentionally blocked.
+   *
+   * ⚠️ You must NOT instantiate PuddySql directly.
+   * To create a working instance, use {@link PuddySql.Instance}:
+   *
+   * ```js
+   * const client = new PuddySql.Instance();
+   * ```
+   *
+   * @constructor
+   * @throws {Error} Always throws an error to prevent direct instantiation.
+   */
+  constructor() {
+    throw new Error('You must use new PuddySql.Instance() to create your new instance.');
+  }
+}
+
+export default PuddySql;

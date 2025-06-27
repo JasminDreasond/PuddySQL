@@ -1,20 +1,184 @@
-import pg from 'pg';
-import { objType } from 'tiny-essentials';
-import TinySqlTags from './TinySqlTags.mjs';
+import { isJsonObject } from 'tiny-essentials';
+import { pg } from './Modules.mjs';
+import PuddySqlEngine from './PuddySqlEngine.mjs';
+import PuddySqlTags from './PuddySqlTags.mjs';
 
-const { Client } = pg;
-const clientBase = new Client();
+/**
+ * Represents the result of a paginated SQL query to locate the exact position of a specific item.
+ *
+ * @typedef {Object} FindResult
+ * @property {number} page - The current page number where the item is located (starting from 1).
+ * @property {number} pages - The total number of pages available in the dataset.
+ * @property {number} total - The total number of items in the dataset.
+ * @property {number} position - The exact index position of the item in the entire dataset (starting from 0).
+ * @property {FreeObj} [item] - The actual item found, if included in the result.
+ */
+
+/**
+ * Tag group definition used to build dynamic SQL clauses for tag filtering.
+ *
+ * @typedef {Object} TagCriteria - Tag group definition to build the clause from.
+ * @property {string} [group.column] - SQL column name for tag data (defaults to `this.getColumnName()`).
+ * @property {string} [group.valueName] - Alias used for JSON values (defaults to `this.defaultValueName`).
+ * @property {boolean} [group.allowWildcards=false] - Whether wildcards are allowed in matching.
+ * @property {Array<string|string[]>} [group.include=[]] - Tag values or grouped OR conditions to include.
+ */
+
+/**
+ * Represents the result of a paginated query.
+ *
+ * @typedef {Object} PaginationResult
+ * @property {unknown[]} items - Array of items returned for the current page.
+ * @property {number} totalPages - Total number of available pages based on the query and per-page limit.
+ * @property {number} totalItems - Total number of items matching the query without pagination.
+ */
+
+/**
+ * Represents a flexible select query input, allowing for different forms.
+ *
+ * @typedef {(
+ *   string |
+ *   string[] |
+ *   {
+ *     aliases?: Record<string, string>; // Mapping of display names to real column names.
+ *     values?: string[];                // List of column names to select.
+ *     boost?: {                         // Boost configuration for weighted ranking.
+ *       alias?: string;                 // The alias to associate with the boost configuration.
+ *       value?: BoostValue[];           // List of boost rules to apply.
+ *     };
+ *   } |
+ *   null
+ * )} SelectQuery
+ */
+
+/**
+ * Parameter cache used to build the WHERE clause.
+ *
+ * @typedef {Object} Pcache - Parameter cache used to build the WHERE clause.
+ * @property {number} [pCache.index=1] - Starting parameter index for SQL placeholders (e.g., `$1`, `$2`...).
+ * @property {any[]} [pCache.values=[]] - Collected values for SQL query binding.
+ */
+
+/**
+ * Represents a free-form object with unknown values and arbitrary keys.
+ *
+ * @typedef {Record<string | number | symbol, unknown>} FreeObj
+ *
+ * An object type where keys can be strings, numbers, or symbols, and values can be any unknown type.
+ * Useful for generic data containers where the structure is not strictly defined.
+ */
+
+/**
+ * Represents conditions used in a SQL WHERE clause.
+ *
+ * @typedef {Object} WhereConditions
+ * @property {string|null|undefined} [funcName] - Optional function name applied to the column (e.g., UPPER, LOWER).
+ * @property {string|null|undefined} [operator] - Comparison operator (e.g., '=', 'LIKE', 'IN').
+ * @property {string|null|undefined} [value] - Value to compare against.
+ * @property {string|null|undefined} [valType] - Custom function for value transformation (e.g., for SOUNDEX).
+ * @property {'left'|'right'|null|undefined} [lPos] - Logical position indicator (e.g., 'left', 'right') for chaining.
+ * @property {string|null|undefined} [newOp] - Replacement operator, used to override the main one.
+ * @property {string|null|undefined} [column] - Name of the column to apply the condition on.
+ */
+
+/**
+ * Represents a boosting rule for weighted query ranking.
+ *
+ * @typedef {Object} BoostValue
+ * @property {string[]} columns - List of columns to apply the boost on.
+ * @property {string} operator - Operator used in the condition (e.g., '=', 'LIKE').
+ * @property {string} value - Value to match in the condition.
+ * @property {number} weight - Weight factor to boost results matching the condition.
+ */
+
+/**
+ * Each join object must contain:
+ * - `table`: The name of the table to join.
+ * - `compare`: The ON clause condition.
+ * - `type` (optional): One of the supported JOIN types (e.g., 'left', 'inner'). Defaults to 'left'.
+ *
+ * @typedef {{ table: string; compare: string; type?: string; }} JoinObj
+ */
+
+/**
+ * @typedef {Object} TableSettings
+ * @property {string} [name]
+ * @property {SelectQuery} [select='*'] - SELECT clause configuration. Can be simplified; complex expressions are auto-formatted.
+ * @property {string|null} [join=null] - Optional JOIN table name.
+ * @property {string|null} [joinCompare='t.key = j.key'] - Condition used to match JOIN tables.
+ * @property {string|null} [order=null] - Optional ORDER BY clause.
+ * @property {string} [id='key'] - Primary key column name.
+ * @property {string|null} [subId=null] - Optional secondary key column name.
+ */
+
+/**
+ * Configuration settings for a SQL entity, defining how it should be queried and joined.
+ *
+ * @typedef {Object} Settings
+ * @property {string} select - The default columns to select in a query (e.g., `"*"`, or `"id, name"`).
+ * @property {string} name - The name of the main table or view.
+ * @property {string} id - The primary key column name.
+ * @property {string|null} joinCompare - Optional column used to match in JOIN conditions (e.g., `"main.id = sub.fk_id"`).
+ * @property {string|null} order - Default column used to order results (e.g., `"created_at DESC"`).
+ * @property {string|null} subId - Secondary identifier column name (for composite keys or scoped tables).
+ * @property {string|null} join - SQL JOIN clause to apply (e.g., `"LEFT JOIN profiles ON users.id = profiles.user_id"`).
+ */
 
 /**
  * TinySQLQuery is a queries operating system developed to operate in a specific table.
  */
-class TinySqlQuery {
+class PuddySqlQuery {
+  /** @type {Record<string, function(WhereConditions) : WhereConditions>} */
   #conditions = {};
+
+  /** @type {Record<string, function(string) : string>} */
   #customValFunc = {};
-  #db;
-  #settings = {};
+
+  /** @type {PuddySqlEngine|null} */
+  #db = null;
+
+  /**
+   * @type {Settings}
+   */
+  #settings = {
+    joinCompare: '',
+    select: '',
+    name: '',
+    id: '',
+    order: null,
+    subId: null,
+    join: null,
+  };
+
+  /**
+   * @type {Record<string, {
+   *  type: string|null,
+   *  options: string|null,
+   * }>}
+   */
   #table = {};
+
+  /** @type {Record<string, PuddySqlTags>} */
   #tagColumns = {};
+
+  /**
+   * Safely retrieves the internal database instance.
+   *
+   * This method ensures that the current internal `#db` is a valid instance of `PuddySqlEngine`.
+   * If the internal value is invalid or was not properly initialized, an error is thrown.
+   *
+   * @returns {PuddySqlEngine} The internal database instance.
+   * @throws {Error} If the internal database is not a valid `PuddySqlEngine`.
+   */
+  getDb() {
+    // @ts-ignore
+    if (this.#db === null || !(this.#db instanceof PuddySqlEngine)) {
+      throw new Error(
+        'Database instance is invalid or uninitialized. Expected an instance of PuddySqlEngine.',
+      );
+    }
+    return this.#db;
+  }
 
   constructor() {
     // Predefined condition operator mappings used in searches
@@ -114,8 +278,8 @@ class TinySqlQuery {
    * This method does not allow overwriting an existing key in either condition or value handlers.
    *
    * @param {string} key - Unique identifier for the new condition type.
-   * @param {string|object|function} conditionHandler - Defines the logic or operator of the condition.
-   * @param {function|null} [valueHandler=null] - Optional custom function for value transformation (e.g., for SOUNDEX).
+   * @param {string|WhereConditions|function(WhereConditions):WhereConditions} conditionHandler - Defines the logic or operator of the condition.
+   * @param {(function(string): string)|null} [valueHandler=null] - Optional custom function for value transformation (e.g., for SOUNDEX).
    *
    * @throws {Error} If the key is not a non-empty string.
    * @throws {Error} If the key already exists in either conditions or value handlers.
@@ -126,14 +290,13 @@ class TinySqlQuery {
     if (typeof key !== 'string' || key.trim() === '') {
       throw new Error(`Condition key must be a non-empty string.`);
     }
-
     if (this.#conditions[key] || this.#customValFunc[key]) {
       throw new Error(`Condition key "${key}" already exists.`);
     }
 
     const isFunc = typeof conditionHandler === 'function';
     const isStr = typeof conditionHandler === 'string';
-    const isObj = objType(conditionHandler, 'object');
+    const isObj = isJsonObject(conditionHandler);
 
     if (!isFunc && !isStr && !isObj) {
       throw new Error(
@@ -149,9 +312,8 @@ class TinySqlQuery {
       }
     }
 
-    if (valueHandler !== null && typeof valueHandler !== 'function') {
+    if (valueHandler !== null && typeof valueHandler !== 'function')
       throw new Error(`Custom value handler must be a function if provided.`);
-    }
 
     // Add condition
     this.#conditions[key] = isStr
@@ -278,23 +440,22 @@ class TinySqlQuery {
    *       - `weight` (number): numeric weight applied when condition matches (default: 1)
    *     - If `columns` is omitted, the `value` is treated as a raw SQL condition inserted directly into the CASE.
    *
-   * Escaping of all values is handled by `Client.escapeLiteral()` for SQL safety (PostgreSQL).
+   * Escaping of all values is handled by `pg.escapeLiteral()` for SQL safety (PostgreSQL).
    *
-   * @private
-   * @param {string|string[]|object|null|undefined} input - Select clause definition.
+   * @param {SelectQuery} input - Select clause definition.
    * @returns {string} - A valid SQL SELECT clause string.
    *
    * @example
-   * this.#selectGenerator();
+   * this.selectGenerator();
    * // returns '*'
    *
-   * this.#selectGenerator('COUNT(*) AS total');
+   * this.selectGenerator('COUNT(*) AS total');
    * // returns 'COUNT(*) AS total'
    *
-   * this.#selectGenerator(['id', 'username']);
+   * this.selectGenerator(['id', 'username']);
    * // returns 'id, username'
    *
-   * this.#selectGenerator({
+   * this.selectGenerator({
    *   aliases: {
    *     id: 'image_id',
    *     uploader: 'user_name'
@@ -303,7 +464,7 @@ class TinySqlQuery {
    * });
    * // returns 'id AS image_id, uploader AS user_name, created_at, score'
    *
-   * this.#selectGenerator({
+   * this.selectGenerator({
    *   aliases: {
    *     id: 'image_id',
    *     uploader: 'user_name'
@@ -344,10 +505,16 @@ class TinySqlQuery {
    * //   ELSE 0
    * // END AS relevance, id AS image_id, uploader AS user_name, created_at
    */
-  #selectGenerator(input) {
+  selectGenerator(input) {
     if (!input) return '*';
 
-    // Boost parser helper
+    /**
+     * Boost parser helper
+     *
+     * @param {BoostValue[]} boostArray
+     * @param {string} alias
+     * @returns {string}
+     */
     const parseAdvancedBoosts = (boostArray, alias) => {
       const cases = [];
 
@@ -365,7 +532,7 @@ class TinySqlQuery {
         if (opValue === 'IN') {
           const conditions = columns.map((col) => {
             if (Array.isArray(value)) {
-              const inList = value.map((v) => clientBase.escapeLiteral(v)).join(', ');
+              const inList = value.map((v) => pg.escapeLiteral(v)).join(', ');
               return `${col} IN (${inList})`;
             } else {
               console.warn(`IN operator expected array, got`, value);
@@ -374,7 +541,7 @@ class TinySqlQuery {
           });
           cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
         } else {
-          const safeVal = clientBase.escapeLiteral(
+          const safeVal = pg.escapeLiteral(
             ['LIKE', 'ILIKE'].includes(opValue) ? `%${value}%` : value,
           );
           const conditions = columns.map((col) => `${col} ${operator} ${safeVal}`);
@@ -389,29 +556,30 @@ class TinySqlQuery {
     if (Array.isArray(input)) {
       return (
         input
-          .map((col) => this.#parseColumn(col))
+          .map((col) => this.parseColumn(col))
           .filter(Boolean)
           .join(', ') || '*'
       );
     }
 
     // If input is an object, handle key-value pairs for aliasing (with boosts support)
-    if (objType(input, 'object')) {
+    if (isJsonObject(input)) {
+      /** @type {string[]} */
       let result = [];
       // Processing aliases
       if (input.aliases)
         result = result.concat(
-          Object.entries(input.aliases).map(([col, alias]) => this.#parseColumn(col, alias)),
+          Object.entries(input.aliases).map(([col, alias]) => this.parseColumn(col, alias)),
         );
 
       // If input is an array, join all columns
       if (Array.isArray(input.values))
-        result.push(...input.values.map((col) => this.#parseColumn(col)));
+        result.push(...input.values.map((col) => this.parseColumn(col)));
 
       // Processing boosts
-      if (objType(input.boost, 'object')) {
+      if (isJsonObject(input.boost)) {
         if (typeof input.boost.alias !== 'string')
-          throw new Error('Missing or invalid boost.alias in #selectGenerator');
+          throw new Error('Missing or invalid boost.alias in selectGenerator');
         if (Array.isArray(input.boost.value))
           result.push(parseAdvancedBoosts(input.boost.value, input.boost.alias));
       }
@@ -422,94 +590,21 @@ class TinySqlQuery {
 
     // If input is a string, treat it as a custom SQL expression
     if (typeof input === 'string') {
-      return this.#parseColumn(input);
+      return this.parseColumn(input);
     }
 
     return '*';
   }
 
   /**
-   * Public wrapper for the internal #selectGenerator method.
-   *
-   * This method builds a full SQL SELECT clause based on the input format,
-   * supporting SQL-safe expressions, aliases, simple column lists, and
-   * relevance-based boosting logic with CASE statements.
-   *
-   * It accepts the same inputs as `#selectGenerator`, allowing:
-   * - Simple string expressions
-   * - Arrays of column names
-   * - Objects with `values`, `aliases`, and `boost` definitions
-   *
-   * The `boost` logic allows for custom relevance boosting with `CASE` statements.
-   * If a `columns` value is not provided, `value` will be treated as a raw SQL condition.
-   *
-   * See `#selectGenerator` for detailed internal logic and examples.
-   *
-   * @param {string|string[]|object|null|undefined} input - Input for SELECT clause generation.
-   * @returns {string} - A properly formatted SQL SELECT clause.
-   *
-   * @example
-   * sql.selectGenerator('COUNT(*) AS total');
-   * // => 'COUNT(*) AS total'
-   *
-   * sql.selectGenerator(['id', 'name']);
-   * // => 'id, name'
-   *
-   * sql.selectGenerator({
-   *   aliases: { id: 'image_id' },
-   *   values: ['created_at']
-   * });
-   * // => 'id AS image_id, created_at'
-   *
-   * sql.selectGenerator({
-   *   boost: {
-   *     alias: 'relevance',
-   *     value: [
-   *       {
-   *         columns: ['title', 'description'],
-   *         value: 'fluttershy',
-   *         weight: 2
-   *       },
-   *       {
-   *         columns: 'tags',
-   *         value: 'pinkie pie',
-   *         operator: 'LIKE',
-   *         weight: 1.5
-   *       },
-   *       {
-   *         columns: 'tags',
-   *         value: 'oc',
-   *         weight: -1
-   *       },
-   *       {
-   *         value: "score > 100 AND views < 1000",
-   *         weight: 5
-   *       }
-   *     ]
-   *   }
-   * });
-   * // => CASE
-   * //   WHEN title LIKE '%fluttershy%' OR description LIKE '%fluttershy%' THEN 2
-   * //   WHEN tags LIKE '%pinkie pie%' THEN 1.5
-   * //   WHEN tags LIKE '%oc%' THEN -1
-   * //   WHEN score > 100 AND views < 1000 THEN 5
-   * //   ELSE 0
-   * // END AS relevance
-   */
-  selectGenerator(input) {
-    return this.#selectGenerator(input);
-  }
-
-  /**
    * Helper function to parse individual columns or SQL expressions.
    * Supports aliasing and complex expressions.
    *
-   * @private
    * @param {string} column - Column name or SQL expression.
    * @param {string} [alias] - Alias for the column (optional).
    * @returns {string} - A valid SQL expression for SELECT clause.
    */
-  #parseColumn(column, alias) {
+  parseColumn(column, alias) {
     // If column is a valid expression (e.g., COUNT(*), MAX(id)), return it as is
     if (/^[A-Za-z0-9_\*().,]+$/.test(column)) {
       if (alias) {
@@ -535,7 +630,7 @@ class TinySqlQuery {
    * @param {string} name - The key or path to extract (dot notation).
    * @returns {string} SQL snippet to extract a value from JSON.
    */
-  getJsonExtract = (where = null, name = null) => `json_extract(${where}, '$.${name}')`;
+  getJsonExtract = (where = '', name = '') => `json_extract(${where}, '$.${name}')`;
 
   /**
    * Expands each element in a JSON array or each property in a JSON object into separate rows.
@@ -543,7 +638,7 @@ class TinySqlQuery {
    * @param {string} source - JSON column or expression to expand.
    * @returns {string} SQL snippet calling json_each.
    */
-  getJsonEach = (source = null) => `json_each(${source})`;
+  getJsonEach = (source = '') => `json_each(${source})`;
 
   // Example: FROM json_each(json_extract(data, '$.tags'))
   /**
@@ -553,8 +648,7 @@ class TinySqlQuery {
    * @param {string} name - The key of the JSON array.
    * @returns {string} SQL snippet to extract and expand a JSON array.
    */
-  getArrayExtract = (where = null, name = null) =>
-    this.getJsonEach(this.getJsonExtract(where, name));
+  getArrayExtract = (where = '', name = '') => this.getJsonEach(this.getJsonExtract(where, name));
 
   // Example: WHERE CAST(json_extract(data, '$.level') AS INTEGER) > 10
   /**
@@ -564,7 +658,7 @@ class TinySqlQuery {
    * @param {string} type - The type to cast to (e.g., 'INTEGER', 'TEXT', 'REAL').
    * @returns {string} SQL snippet with cast applied.
    */
-  getJsonCast = (where = null, name = null, type = 'NULL') =>
+  getJsonCast = (where = '', name = '', type = 'NULL') =>
     `CAST(${this.getJsonExtract(where, name)} AS ${type.toUpperCase()})`;
 
   /**
@@ -578,20 +672,22 @@ class TinySqlQuery {
    * @returns {Promise<void>}
    */
   async updateTable(changes) {
+    const db = this.getDb();
+
     for (const change of changes) {
       const action = change[0];
 
       if (action === 'ADD') {
         const query = `ALTER TABLE ${this.#settings.name} ADD COLUMN ${change[1]} ${change[2]} ${change[3] || ''}`;
         try {
-          await this.#db.run(query, undefined, 'updateTable - ADD');
+          await db.run(query, undefined, 'updateTable - ADD');
         } catch (error) {
           console.error('[sql] [updateTable - ADD] Error adding column:', error);
         }
       } else if (action === 'REMOVE') {
         const query = `ALTER TABLE ${this.#settings.name} DROP COLUMN IF EXISTS ${change[1]}`;
         try {
-          await this.#db.run(query, undefined, 'updateTable - REMOVE');
+          await db.run(query, undefined, 'updateTable - REMOVE');
         } catch (error) {
           console.error('[sql] [updateTable - REMOVE] Error removing column:', error);
         }
@@ -600,14 +696,14 @@ class TinySqlQuery {
           change[3] ? `, ALTER COLUMN ${change[1]} SET ${change[3]}` : ''
         }`;
         try {
-          await this.#db.run(query, undefined, 'updateTable - MODIFY');
+          await db.run(query, undefined, 'updateTable - MODIFY');
         } catch (error) {
           console.error('[sql] [updateTable - MODIFY] Error modifying column:', error);
         }
       } else if (action === 'RENAME') {
         const query = `ALTER TABLE ${this.#settings.name} RENAME COLUMN ${change[1]} TO ${change[2]}`;
         try {
-          await this.#db.run(query, undefined, 'updateTable - RENAME');
+          await db.run(query, undefined, 'updateTable - RENAME');
         } catch (error) {
           console.error('[sql] [updateTable - RENAME] Error renaming column:', error);
         }
@@ -630,7 +726,7 @@ class TinySqlQuery {
    * @throws {Error} If there is an issue with the database or settings, or if the table can't be dropped.
    */
   async dropTable() {
-    const db = this.#db;
+    const db = this.getDb();
     return new Promise((resolve, reject) => {
       const query = `DROP TABLE ${this.#settings.name};`;
       db.run(query, undefined, 'dropTable')
@@ -647,13 +743,14 @@ class TinySqlQuery {
    * Creates a table in the database based on provided column definitions.
    * Also stores the column structure in this.#table as an object keyed by column name.
    * If a column type is "TAGS", it will be replaced with "JSON" for SQL purposes,
-   * and registered in #tagColumns using a TinySqlTags instance,
+   * and registered in #tagColumns using a PuddySqlTags instance,
    * but the original "TAGS" value will be preserved in this.#table.
    * @param {Array<Array<string|any>>} columns - An array of column definitions.
    * Each column is defined by an array containing the column name, type, and optional configurations.
    * @returns {Promise<void>}
    */
   async createTable(columns) {
+    const db = this.getDb();
     // Start building the query
     let query = 'CREATE TABLE IF NOT EXISTS ' + this.#settings.name + ' (';
 
@@ -667,7 +764,7 @@ class TinySqlQuery {
         // Tags
         if (type.toUpperCase() === 'TAGS') {
           col[1] = 'JSON';
-          this.#tagColumns[name] = new TinySqlTags(name);
+          this.#tagColumns[name] = new PuddySqlTags(name);
         }
       }
 
@@ -687,7 +784,7 @@ class TinySqlQuery {
     query += sqlColumns.join(', ') + ')';
 
     // Execute the SQL query to create the table using db.run
-    await this.#db.run(query, undefined, 'createTable');
+    await db.run(query, undefined, 'createTable');
 
     // Save the table structure using an object with column names as keys
     this.#table = {};
@@ -703,11 +800,11 @@ class TinySqlQuery {
   }
 
   /**
-   * Returns the TinySqlTags instance associated with the given column name,
+   * Returns the PuddySqlTags instance associated with the given column name,
    * if it was defined as a "TAGS" column during table creation.
    *
    * @param {string} name - The column name to retrieve the tag editor for.
-   * @returns {TinySqlTags|null} - The TinySqlTags instance if it exists, otherwise null.
+   * @returns {PuddySqlTags|null} - The PuddySqlTags instance if it exists, otherwise null.
    */
   getTagEditor(name) {
     if (this.#tagColumns[name]) return this.#tagColumns[name];
@@ -717,6 +814,8 @@ class TinySqlQuery {
   /**
    * Utility functions to sanitize and convert raw database values
    * into proper JavaScript types for JSON compatibility and safe parsing.
+   *
+   * @type {Record<string, function(any) : unknown>}
    */
   #jsonEscape = {
     /**
@@ -784,7 +883,7 @@ class TinySqlQuery {
           result = null;
         }
         return result;
-      } else if (objType(raw, 'object') || Array.isArray(raw)) return raw;
+      } else if (Array.isArray(raw) || isJsonObject(raw)) return raw;
       return null;
     },
     /**
@@ -834,6 +933,8 @@ class TinySqlQuery {
   /**
    * Maps SQL data types (as returned from metadata or schema)
    * to the appropriate conversion function from #jsonEscape.
+   *
+   * @type {Record<string, function(any) : unknown>}
    */
   #jsonEscapeAlias = {
     // Boolean aliases
@@ -879,12 +980,11 @@ class TinySqlQuery {
    *
    * Supported types: BOOLEAN, INTEGER, BIGINT, FLOAT, TEXT, JSON, DATE, TIMESTAMP, etc.
    *
-   * @private
-   * @param {object} result - The result row to check.
-   * @returns {object}
+   * @param {any} result - The result row to check.
+   * @returns {FreeObj}
    */
-  #jsonChecker(result) {
-    if (!objType(result, 'object')) return result;
+  resultChecker(result) {
+    if (!isJsonObject(result)) return result;
     for (const item in result) {
       const column = this.#table?.[item];
       if (!column || result[item] == null) continue;
@@ -901,10 +1001,10 @@ class TinySqlQuery {
    * Escapes values inside the valueObj using type definitions from this.#table.
    * Only modifies the values that have a matching column in the table.
    * Uses the appropriate parser from #jsonEscapeAlias.
-   * @param {object} valueObj - The object containing values to be escaped.
-   * @returns {object} The same valueObj with its values escaped according to table definitions.
+   * @param {FreeObj} valueObj - The object containing values to be escaped.
+   * @returns {FreeObj} The same valueObj with its values escaped according to table definitions.
    */
-  #escapeValues(valueObj = {}) {
+  escapeValues(valueObj = {}) {
     for (const key in valueObj) {
       if (!valueObj.hasOwnProperty(key)) continue;
 
@@ -923,37 +1023,28 @@ class TinySqlQuery {
   }
 
   /**
-   * Wrapper function to escape values in valueObj using #escapeValues.
-   * @param {object} valueObj - The object containing values to be escaped.
-   * @returns {object} The same valueObj with its values escaped according to table definitions.
-   */
-  escapeValues(valueObj = {}) {
-    return this.#escapeValues(valueObj);
-  }
-
-  /**
    * Set or update database settings by merging with existing ones.
    * This function ensures safe fallback values and formats the SELECT clause.
    *
-   * @param {object} [settings={}] - Partial configuration to apply. Will be merged with current settings.
-   * @param {string} [settings.select='*'] - SELECT clause configuration. Can be simplified; complex expressions are auto-formatted.
-   * @param {string|null} [settings.join=null] - Optional JOIN table name.
-   * @param {string|null} [settings.joinCompare='t.key = j.key'] - Condition used to match JOIN tables.
-   * @param {string|null} [settings.order=null] - Optional ORDER BY clause.
-   * @param {string} [settings.id='key'] - Primary key column name.
-   * @param {string|null} [settings.subId=null] - Optional secondary key column name.
-   * @param {object} - TinySQL Instance.
+   * @param {TableSettings} [settings={}] - Partial configuration to apply. Will be merged with current settings.
+   * @param {PuddySqlEngine} [db] - PuddySql Instance.
    */
-  setDb(settings = {}, db = null) {
-    if (db) this.#db = db;
+  setDb(settings = {}, db) {
+    if (!isJsonObject(settings)) throw new Error('Settings must be a plain object.');
+    if (!(db instanceof PuddySqlEngine))
+      throw new Error('Invalid type for db. Expected a PuddySql.');
+    this.#db = db;
+
     const selectValue =
-      typeof settings.select === 'string'
-        ? this.#selectGenerator(settings.select)
+      typeof settings.select !== 'undefined'
+        ? this.selectGenerator(settings.select)
         : this.#settings?.select || '*';
 
+    /** @type {Settings} */
     const newSettings = {
       ...this.#settings,
       ...settings,
+      select: '',
     };
 
     newSettings.select = selectValue;
@@ -976,8 +1067,7 @@ class TinySqlQuery {
    * - SQLite (uses `changes`)
    * - PostgreSQL (uses `rowCount`)
    *
-   * @private
-   * @type {Object.<string>}
+   * @type {Record<string, string>}
    */
   #resultCounts = {
     sqlite3: 'changes',
@@ -992,20 +1082,19 @@ class TinySqlQuery {
    * - PostgreSQL: returns `result.rowCount`
    * - Fallback: `result.rowsAffected`, if defined
    *
-   * @private
-   * @param {Object} result - The result object returned by the database driver.
-   * @returns {number|null} The number of affected rows, or null if it can't be determined.
+   * @param {FreeObj|null} result - The result object returned by the database driver.
+   * @returns {number} The number of affected rows, or null if it can't be determined.
    */
-  #getResultCount(result) {
-    const sqlEngine = this.#db.getSqlEngine();
-    if (objType(result, 'object'))
-      return typeof sqlEngine === 'string' &&
-        typeof result[this.#resultCounts[sqlEngine]] === 'number'
-        ? result[this.#resultCounts[sqlEngine]]
+  getResultCount(result) {
+    const sqlEngine = this.getDb().getSqlEngine();
+    if (isJsonObject(result))
+      return sqlEngine.length > 0 && typeof result[this.#resultCounts[sqlEngine]] === 'number'
+        ? // @ts-ignore
+          result[this.#resultCounts[sqlEngine]]
         : typeof result.rowsAffected === 'number'
           ? result.rowsAffected
-          : null;
-    return null;
+          : 0;
+    return 0;
   }
 
   /**
@@ -1015,19 +1104,30 @@ class TinySqlQuery {
    * @returns {Promise<boolean>}
    */
   async has(id, subId) {
-    const useSub = this.#settings.subId && subId ? true : false;
+    if (typeof id !== 'string' && typeof id !== 'number')
+      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+    if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
+      throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
+    if (!this.#settings?.name || !this.#settings?.id)
+      throw new Error('Invalid table settings: name and id must be defined.');
+
+    const db = this.getDb();
+    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
     const params = [id];
     const query = `SELECT COUNT(*) FROM ${this.#settings.name} WHERE ${this.#settings.id} = $1${useSub ? ` AND ${this.#settings.subId} = $2` : ''} LIMIT 1`;
+    // @ts-ignore
     if (useSub) params.push(subId);
 
-    const result = await this.#db.get(query, params, 'has');
-    return objType(result, 'object') && result['COUNT(*)'] === 1 ? true : false;
+    const result = await db.get(query, params, 'has');
+    return isJsonObject(result) && result['COUNT(*)'] === 1 ? true : false;
   }
 
   /**
    * Type-specific value transformers for preparing data before insertion or update.
    * This object maps column types to functions that transform values accordingly.
-   * Used internally by #escapeValuesFix.
+   * Used internally by escapeValuesFix.
+   *
+   * @type {Record<string, function(any) : string>}
    */
   #jsonEscapeFix = {
     // Serializes any value into a JSON string.
@@ -1048,42 +1148,44 @@ class TinySqlQuery {
    * @param {string} name - The column name associated with the value.
    * @returns {any} The escaped value if a valid type and handler exist; otherwise, the original value.
    */
-  #escapeValuesFix(v, name) {
+  escapeValuesFix(v, name) {
     const column = this.#table?.[name];
     const type = column.type || '';
-    if (typeof this.#jsonEscapeFix[type] !== 'function') return v;
-    else return this.#jsonEscapeFix[type](v);
+    const func = this.#jsonEscapeFix[type];
+    if (typeof func !== 'function') return v;
+    else return func(v);
   }
 
   /**
    * Updates records based on a complex WHERE clause defined by a filter object.
-   * Instead of relying solely on an ID (or subId), this method uses #parseWhere to
+   * Instead of relying solely on an ID (or subId), this method uses parseWhere to
    * generate the conditions, and updates the given fields in valueObj.
    *
-   * @param {object} valueObj - An object representing the columns and new values for the update.
-   * @param {object} filter - An object containing the conditions for the WHERE clause.
+   * @param {FreeObj} valueObj - An object representing the columns and new values for the update.
+   * @param {FreeObj} filter - An object containing the conditions for the WHERE clause.
    * @returns {Promise<number>} - Count of rows that were updated.
    */
   async advancedUpdate(valueObj = {}, filter = {}) {
+    const db = this.getDb();
     // Validate parameters
-    if (!objType(filter, 'object')) {
+    if (!isJsonObject(filter)) {
       throw new Error('Invalid filter object for advancedUpdate');
     }
-    if (!objType(valueObj, 'object') || Object.keys(valueObj).length === 0) {
+    if (!isJsonObject(valueObj) || Object.keys(valueObj).length === 0) {
       throw new Error('No update values provided for advancedUpdate');
     }
 
     // Set the SET clause and its parameters
     const columns = Object.keys(valueObj);
     const updateValues = Object.values(valueObj).map((v, index) =>
-      this.#escapeValuesFix(v, columns[index]),
+      this.escapeValuesFix(v, columns[index]),
     );
     const setClause = columns.map((col, index) => `${col} = $${index + 1}`).join(', ');
 
     // Creates a parameter cache for WHERE.
     // The initial index should be equal to updateValues.length + 1 to maintain the correct sequence.
     const whereCache = { index: updateValues.length + 1, values: [] };
-    const whereClause = this.#parseWhere(whereCache, filter);
+    const whereClause = this.parseWhere(whereCache, filter);
     if (!whereClause) {
       throw new Error('Empty WHERE clause — update aborted for safety');
     }
@@ -1092,21 +1194,22 @@ class TinySqlQuery {
     const query = `UPDATE ${this.#settings.name} SET ${setClause} WHERE ${whereClause}`;
     const params = [...updateValues, ...whereCache.values];
 
-    const result = await this.#db.run(query, params, 'advancedUpdate');
-    return this.#getResultCount(result);
+    const result = await db.run(query, params, 'advancedUpdate');
+    return this.getResultCount(result);
   }
 
   /**
    * Update an existing record with given data.
    * Will not insert if the record doesn't exist.
    * @param {string|number} id - Primary key value.
-   * @param {object} valueObj - Data to update.
+   * @param {FreeObj} valueObj - Data to update.
    * @returns {Promise<number>} Count of rows were updated.
    */
   async update(id, valueObj = {}) {
+    const db = this.getDb();
     const columns = Object.keys(valueObj);
     const values = Object.values(valueObj).map((v, index) =>
-      this.#escapeValuesFix(v, columns[index]),
+      this.escapeValuesFix(v, columns[index]),
     );
 
     const setClause = columns.map((col, index) => `${col} = $${index + 1}`).join(', ');
@@ -1115,10 +1218,11 @@ class TinySqlQuery {
     const query = `UPDATE ${this.#settings.name} SET ${setClause} WHERE ${this.#settings.id} = $${columns.length + 1}${useSub ? ` AND ${this.#settings.subId} = $${columns.length + 2}` : ''}`;
 
     const params = [...values, id];
+    // @ts-ignore
     if (useSub) params.push(valueObj[this.#settings.subId]);
 
-    const result = await this.#db.run(query, params, 'update');
-    return this.#getResultCount(result);
+    const result = await db.run(query, params, 'update');
+    return this.getResultCount(result);
   }
 
   /**
@@ -1128,13 +1232,14 @@ class TinySqlQuery {
    * All objects inside the array must have identical keys.
    *
    * @param {string|number|Array<string|number>} id - Primary key value(s) for each record.
-   * @param {object|object[]} valueObj - A single object or an array of objects containing the data to store.
+   * @param {FreeObj|FreeObj[]} valueObj - A single object or an array of objects containing the data to store.
    * @param {boolean} [onlyIfNew=false] - If true, only insert if the record(s) do not already exist.
-   * @returns {Promise<object|object[]|null>} - Generated values will be returned, or null if nothing was generated.
+   * @returns {Promise<FreeObj|FreeObj[]|null>} - Generated values will be returned, or null if nothing was generated.
    * @throws {Error} If `valueObj` is an array and `id` is not an array of the same length,
    *                 or if objects in `valueObj` array have mismatched keys.
    */
   async set(id, valueObj = {}, onlyIfNew = false) {
+    const db = this.getDb();
     // Prepare validator
     const isArray = Array.isArray(valueObj);
     const objects = isArray ? valueObj : [valueObj];
@@ -1163,7 +1268,7 @@ class TinySqlQuery {
     for (let i = 0; i < objects.length; i++) {
       const obj = objects[i];
       const rowId = isArray ? ids[i] : ids[0];
-      const values = [rowId, ...columns.map((col) => this.#escapeValuesFix(obj[col], col))];
+      const values = [rowId, ...columns.map((col) => this.escapeValuesFix(obj[col], col))];
       allParams.push(...values);
 
       const offset = i * (columns.length + 1); // +1 for ID
@@ -1203,8 +1308,8 @@ class TinySqlQuery {
 
     // Complete!
     const result = await (isArray
-      ? this.#db.all(query, allParams, 'multi-set')
-      : this.#db.get(query, allParams, 'set'));
+      ? db.all(query, allParams, 'multi-set')
+      : db.get(query, allParams, 'set'));
     return result || null;
   }
 
@@ -1212,15 +1317,22 @@ class TinySqlQuery {
    * Get a record by its ID (and optional subId).
    * @param {string|number} id - Primary key value.
    * @param {string|number} [subId] - Optional sub-ID for composite key.
-   * @returns {Promise<object|null>}
+   * @returns {Promise<FreeObj|null>}
    */
   async get(id, subId) {
-    const useSub = this.#settings.subId && subId ? true : false;
+    if (typeof id !== 'string' && typeof id !== 'number')
+      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+    if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
+      throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
+
+    const db = this.getDb();
+    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
     const params = [id];
     const query = `SELECT ${this.#settings.select} FROM ${this.#settings.name} t 
-                     ${this.#insertJoin()} WHERE t.${this.#settings.id} = $1${useSub ? ` AND t.${this.#settings.subId} = $2` : ''}`;
+                     ${this.insertJoin()} WHERE t.${this.#settings.id} = $1${useSub ? ` AND t.${this.#settings.subId} = $2` : ''}`;
+    // @ts-ignore
     if (useSub) params.push(subId);
-    const result = this.#jsonChecker(await this.#db.get(query, params, 'get'));
+    const result = this.resultChecker(await db.get(query, params, 'get'));
     if (!result) return null;
     return result;
   }
@@ -1228,23 +1340,25 @@ class TinySqlQuery {
   /**
    * Delete records based on a complex WHERE clause using a filter object.
    *
-   * Uses the internal #parseWhere method to build a flexible condition set.
+   * Uses the internal parseWhere method to build a flexible condition set.
    *
-   * @param {object} filter - An object containing the WHERE condition(s).
+   * @param {FreeObj} filter - An object containing the WHERE condition(s).
    * @returns {Promise<number>} - Number of rows deleted.
    */
   async advancedDelete(filter = {}) {
-    if (!filter || typeof filter !== 'object') {
+    const db = this.getDb();
+    if (!isJsonObject(filter)) {
       throw new Error('Invalid filter object for advancedDelete');
     }
 
+    /** @type {Pcache} */
     const pCache = { index: 1, values: [] };
-    const whereClause = this.#parseWhere(pCache, filter);
+    const whereClause = this.parseWhere(pCache, filter);
     if (!whereClause) throw new Error('Empty WHERE clause — deletion aborted for safety');
 
     const query = `DELETE FROM ${this.#settings.name} WHERE ${whereClause}`;
-    const result = await this.#db.run(query, pCache.values, 'advancedDelete');
-    return this.#getResultCount(result);
+    const result = await db.run(query, pCache.values, 'advancedDelete');
+    return this.getResultCount(result);
   }
 
   /**
@@ -1254,13 +1368,20 @@ class TinySqlQuery {
    * @returns {Promise<number>} - Count of rows were updated.
    */
   async delete(id, subId) {
-    const useSub = this.#settings.subId && subId ? true : false;
+    if (typeof id !== 'string' && typeof id !== 'number')
+      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+    if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
+      throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
+
+    const db = this.getDb();
+    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
     const query = `DELETE FROM ${this.#settings.name} WHERE ${this.#settings.id} = $1${useSub ? ` AND ${this.#settings.subId} = $2` : ''}`;
     const params = [id];
+    // @ts-ignore
     if (useSub) params.push(subId);
 
-    const result = await this.#db.run(query, params, 'delete');
-    return this.#getResultCount(result);
+    const result = await db.run(query, params, 'delete');
+    return this.getResultCount(result);
   }
 
   /**
@@ -1268,21 +1389,22 @@ class TinySqlQuery {
    * If an ID is provided, returns only the matching record(s) up to the specified count.
    * @param {number} count - Number of rows to retrieve.
    * @param {string|number|null} [filterId=null] - Optional ID to filter by.
-   * @param {string|string[]|object} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
-   * @returns {Promise<object[]>}
+   * @param {SelectQuery} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
+   * @returns {Promise<FreeObj[]>}
    */
   async getAmount(count, filterId = null, selectValue = '*') {
+    const db = this.getDb();
     const orderClause = this.#settings.order ? `ORDER BY ${this.#settings.order}` : '';
     const whereClause = filterId !== null ? `WHERE t.${this.#settings.id} = $1` : '';
     const limitClause = `LIMIT $${filterId !== null ? 2 : 1}`;
-    const query = `SELECT ${this.#selectGenerator(selectValue)} FROM ${this.#settings.name} t 
-                   ${this.#insertJoin()} 
+    const query = `SELECT ${this.selectGenerator(selectValue)} FROM ${this.#settings.name} t 
+                   ${this.insertJoin()} 
                    ${whereClause}
                    ${orderClause} ${limitClause}`.trim();
 
     const params = filterId !== null ? [filterId, count] : [count];
-    const results = await this.#db.all(query, params, 'getAmount');
-    for (const index in results) this.#jsonChecker(results[index]);
+    const results = await db.all(query, params, 'getAmount');
+    for (const index in results) this.resultChecker(results[index]);
     return results;
   }
 
@@ -1290,19 +1412,20 @@ class TinySqlQuery {
    * Get all records from the table.
    * If an ID is provided, returns only the matching record(s).
    * @param {string|number|null} [filterId=null] - Optional ID to filter by.
-   * @param {string|string[]|object} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
-   * @returns {Promise<object[]>}
+   * @param {SelectQuery} [selectValue='*'] - Defines which columns or expressions should be selected in the query.
+   * @returns {Promise<FreeObj[]>}
    */
   async getAll(filterId = null, selectValue = '*') {
+    const db = this.getDb();
     const orderClause = this.#settings.order ? `ORDER BY ${this.#settings.order}` : '';
     const whereClause = filterId !== null ? `WHERE t.${this.#settings.id} = $1` : '';
-    const query = `SELECT ${this.#selectGenerator(selectValue)} FROM ${this.#settings.name} t 
-                   ${this.#insertJoin()} 
+    const query = `SELECT ${this.selectGenerator(selectValue)} FROM ${this.#settings.name} t 
+                   ${this.insertJoin()} 
                    ${whereClause}
                    ${orderClause}`.trim();
 
-    const results = await this.#db.all(query, filterId !== null ? [filterId] : [], 'getAll');
-    for (const index in results) this.#jsonChecker(results[index]);
+    const results = await db.all(query, filterId !== null ? [filterId] : [], 'getAll');
+    for (const index in results) this.resultChecker(results[index]);
     return results;
   }
 
@@ -1310,29 +1433,51 @@ class TinySqlQuery {
    * Executes a paginated query and returns results, total pages, and total item count.
    *
    * @param {string} query - The base SQL query (should not include LIMIT or OFFSET).
-   * @param {Array<any>} params - The parameters for the SQL query.
+   * @param {any[]} params - The parameters for the SQL query.
    * @param {number} perPage - The number of items per page.
    * @param {number} page - The current page number (starting from 1).
    * @param {string} queryName - The query name to insert into the sql debug.
-   * @returns {Promise<{ items: any[], totalPages: number, totalItems: number }>}
+   * @returns {Promise<PaginationResult>}
    */
-  async #pagination(query, params, perPage, page, queryName = '') {
+  async execPagination(query, params, perPage, page, queryName = '') {
+    if (typeof query !== 'string')
+      throw new Error(`Expected 'query' to be a string, got ${typeof query}`);
+    if (!Array.isArray(params))
+      throw new Error(`Expected 'params' to be an array, got ${typeof params}`);
+    if (!Number.isInteger(perPage) || perPage < 0)
+      throw new RangeError(`'perPage' must be a non-negative integer. Received: ${perPage}`);
+    if (!Number.isInteger(page) || page < 1)
+      throw new RangeError(`'page' must be an integer >= 1. Received: ${page}`);
+    if (typeof queryName !== 'string')
+      throw new Error(`Expected 'queryName' to be a string, got ${typeof queryName}`);
+
+    const db = this.getDb();
     const offset = (page - 1) * perPage;
     const isZero = perPage < 1;
 
     // Count total items
     const countQuery = `SELECT COUNT(*) as total FROM (${query}) AS count_wrapper`;
-    const { total } = !isZero
-      ? await this.#db.get(countQuery, params, `pagination-${queryName}`)
+    const countResult = !isZero
+      ? await db.get(countQuery, params, `pagination-${queryName}`)
       : { total: 0 };
+
+    const total = isJsonObject(countResult)
+      ? typeof countResult.total === 'number' &&
+        !Number.isNaN(countResult.total) &&
+        Number.isFinite(countResult.total) &&
+        countResult.total >= 0
+        ? countResult.total
+        : 0
+      : 0;
 
     // Fetch paginated items
     const paginatedQuery = `${query} LIMIT ? OFFSET ?`;
     const items = !isZero
-      ? await this.#db.all(paginatedQuery, [...params, perPage, offset], `pagination-${queryName}`)
+      ? await db.all(paginatedQuery, [...params, perPage, offset], `pagination-${queryName}`)
       : [];
 
     const totalPages = !isZero ? Math.ceil(total / perPage) : 0;
+    for (const index in items) this.resultChecker(items[index]);
 
     return {
       items,
@@ -1353,15 +1498,13 @@ class TinySqlQuery {
    * - Single-condition objects.
    * - Dynamic operators through the internal `#conditions` handler.
    *
-   * @param {object} [pCache={}] - Placeholder cache object.
-   * @param {number} [pCache.index=1] - Index for SQL placeholders (e.g., $1, $2).
-   * @param {any[]} [pCache.values=[]] - Array to store values corresponding to placeholders.
-   * @param {object} [group={}] - Grouped or single filter condition.
+   * @param {Pcache} [pCache={ index: 1, values: [] }] - Placeholder cache object.
+   * @param {FreeObj} [group={}] - Grouped or single filter condition.
    * @returns {string} SQL-formatted WHERE clause (without the "WHERE" keyword).
    *
    * @example
    * const pCache = { index: 1, values: [] };
-   * const clause = this.#parseWhere(pCache, {
+   * const clause = this.parseWhere(pCache, {
    *   group: 'OR',
    *   conditions: [
    *     { column: 'status', value: 'active' },
@@ -1371,20 +1514,26 @@ class TinySqlQuery {
    * // clause: "(status = $1) OR (role = $2)"
    * // pCache.values: ['active', 'admin']
    */
-  #parseWhere(pCache = {}, group = {}) {
-    if (!objType(pCache, 'object') || !group || typeof group !== 'object') return '';
+  parseWhere(pCache = { index: 1, values: [] }, group = {}) {
+    if (!isJsonObject(pCache) || !isJsonObject(group)) return '';
     if (typeof pCache.index !== 'number') pCache.index = 1;
     if (!Array.isArray(pCache.values)) pCache.values = [];
 
-    if (group.conditions && Array.isArray(group.conditions)) {
-      const logic = group.group?.toUpperCase() === 'OR' ? 'OR' : 'AND';
+    if (Array.isArray(group.conditions)) {
+      const logic =
+        typeof group.group === 'string' && group.group.toUpperCase() === 'OR' ? 'OR' : 'AND';
       const innerConditions = group.conditions.map((cond) => {
-        return `(${this.#parseWhere(pCache, cond)})`;
+        return `(${this.parseWhere(pCache, cond)})`;
       });
       return innerConditions.join(` ${logic} `);
     }
 
+    /**
+     * @param {*} valType
+     * @returns {string}
+     */
     const getParamResult = (valType) => {
+      if (typeof pCache.index !== 'number') throw new Error('Invalid pCache index');
       const newIndex = pCache.index++;
       return typeof this.#customValFunc[valType] === 'function'
         ? this.#customValFunc[valType](`$${newIndex}`)
@@ -1392,16 +1541,17 @@ class TinySqlQuery {
     };
 
     // Flat object fallback for backward compatibility
-    if (objType(group, 'object') && !group.column) {
+    if (!group.column) {
       const entries = Object.entries(group);
       const logic = 'AND';
       const innerConditions = entries.map(([newCol, cond]) => {
+        if (!isJsonObject(cond)) throw new Error(`Invalid parseWhere to col ${newCol}.`);
         let col = newCol;
         let operator = '=';
         let value = cond.value;
         let valType = cond.valType;
 
-        if (cond.operator) {
+        if (typeof cond.operator === 'string') {
           const selected = cond.operator.toUpperCase();
           if (typeof this.#conditions[selected] === 'function') {
             const result = this.#conditions[selected](cond);
@@ -1412,6 +1562,7 @@ class TinySqlQuery {
           }
         }
 
+        if (!Array.isArray(pCache.values)) throw new Error('Invalid pCache values');
         pCache.values.push(value);
         return `(${col} ${operator} $${getParamResult(valType)})`;
       });
@@ -1424,7 +1575,7 @@ class TinySqlQuery {
     let value = group.value;
     let valType = group.valType;
 
-    if (group.operator) {
+    if (typeof group.operator === 'string') {
       const selected = group.operator.toUpperCase();
       if (typeof this.#conditions[selected] === 'function') {
         const result = this.#conditions[selected](group);
@@ -1446,10 +1597,9 @@ class TinySqlQuery {
    * It expects `this.#settings.join` to be a string containing the table name,
    * and `this.#settings.joinCompare` to be the ON condition.
    *
-   * @private
    * @returns {string} The default LEFT JOIN SQL snippet, or an empty string if no join is configured.
    */
-  #insertJoin() {
+  insertJoin() {
     return typeof this.#settings.join === 'string'
       ? `LEFT JOIN ${this.#settings.join} j ON ${this.#settings.joinCompare || ''}`
       : '';
@@ -1534,24 +1684,24 @@ class TinySqlQuery {
    * Supports multiple formats:
    * - If `join` is a single object: returns a single JOIN clause.
    * - If `join` is an array of objects: generates multiple JOINs with aliases (`j1`, `j2`, ...).
-   * - If `join` is invalid or empty: falls back to `#insertJoin()` using internal settings.
+   * - If `join` is invalid or empty: falls back to `insertJoin()` using internal settings.
    *
-   * Each join object must contain:
-   * - `table`: The name of the table to join.
-   * - `compare`: The ON clause condition.
-   * - `type` (optional): One of the supported JOIN types (e.g., 'left', 'inner'). Defaults to 'left'.
-   *
-   * @private
-   * @param {object|object[]} join - The join configuration(s).
+   * @param {JoinObj|JoinObj[]|string|null} [join] - The join configuration(s).
    * @returns {string} One or more JOIN SQL snippets.
    */
-  #parseJoin(join) {
+  parseJoin(join) {
+    /**
+     * @param {JoinObj} j
+     * @param {number} idx
+     * @returns {string}
+     */
     const insertJoin = (j, idx) => {
       const alias = `j${idx + 1}`;
       const typeKey = typeof j.type === 'string' ? j.type.toLowerCase() : 'left';
+      // @ts-ignore
       const joinType = this.#joinTypes[typeKey];
 
-      if (!joinType) {
+      if (typeof joinType !== 'string') {
         throw new Error(
           `Invalid JOIN type: '${j.type}'. Supported types: ${Object.keys(this.#joinTypes).join(', ')}`,
         );
@@ -1560,11 +1710,13 @@ class TinySqlQuery {
       return `${joinType} ${j.table} ${alias} ON ${j.compare}`;
     };
 
-    return objType(join, 'object')
+    return isJsonObject(join)
       ? [join].map(insertJoin).join(' ')
       : Array.isArray(join)
         ? join.map(insertJoin).join(' ')
-        : this.#insertJoin();
+        : typeof join === 'string'
+          ? join
+          : this.insertJoin();
   }
 
   /**
@@ -1573,17 +1725,18 @@ class TinySqlQuery {
    *
    * If selectValue is null, it only returns the pagination/position data, not the item itself.
    *
-   * @param {object} [searchData={}] - Main search configuration.
-   * @param {object} [searchData.q={}] - Nested criteria object.
-   * @param {object[]|object|null} [searchData.tagCriteria] - One or multiple tag criteria groups.
+   * @param {Object} [searchData={}] - Main search configuration.
+   * @param {FreeObj} [searchData.q={}] - Nested criteria object.
+   * @param {TagCriteria[]|TagCriteria|null} [searchData.tagCriteria] - One or multiple tag criteria groups.
    * @param {string[]} [searchData.tagCriteriaOps] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
    * @param {number} [searchData.perPage] - Number of items per page.
-   * @param {string|string[]|object|null} [searchData.select='*'] - Which columns to select. Set to null to skip item data.
+   * @param {SelectQuery} [searchData.select='*'] - Which columns to select. Set to null to skip item data.
    * @param {string} [searchData.order] - SQL ORDER BY clause. Defaults to configured order.
-   * @param {object|object[]} [searchData.join] - JOIN definitions with table, compare, and optional type.
-   * @returns {Promise<{ page: number, pages: number, total: number, position: number, item?: object } | null>}
+   * @param {string|JoinObj|JoinObj[]} [searchData.join] - JOIN definitions with table, compare, and optional type.
+   * @returns {Promise<FindResult | null>}
    */
   async find(searchData = {}) {
+    const db = this.getDb();
     const criteria = searchData.q || {};
     const tagCriteria = searchData.tagCriteria || null;
     const tagCriteriaOps = Array.isArray(searchData.tagCriteriaOps)
@@ -1595,36 +1748,37 @@ class TinySqlQuery {
     const order = searchData.order || this.#settings.order;
     const joinConfig = searchData.join || null;
 
-    if (!criteria || typeof criteria !== 'object') return null;
+    if (!isJsonObject(criteria)) return null;
     if (typeof perPage !== 'number' || perPage < 1) throw new Error('Invalid perPage value');
 
+    /** @type {Pcache} */
     const pCache = { index: 1, values: [] };
     const whereParts = [];
 
     // Apply base criteria
     if (Object.keys(criteria).length) {
-      whereParts.push(this.#parseWhere(pCache, criteria));
+      whereParts.push(this.parseWhere(pCache, criteria));
     }
 
     // Apply tagCriteria logic
     if (Array.isArray(tagCriteria)) {
       tagCriteria.forEach((group, i) => {
-        const column = group?.column || 'tags';
+        const column = typeof group.column === 'string' ? group.column : 'tags';
         const tag = this.getTagEditor(column);
-        if (!tag) return;
+        if (!(tag instanceof PuddySqlTags)) return;
 
-        const clause = tag.parseWhere(pCache, group);
+        const clause = tag.parseWhere(group, pCache);
         if (!clause) return;
 
         const op = i > 0 ? tagCriteriaOps[i - 1] || 'AND' : null;
         if (op) whereParts.push(op);
         whereParts.push(clause);
       });
-    } else if (tagCriteria && typeof tagCriteria === 'object') {
-      const column = tagCriteria?.column || 'tags';
+    } else if (isJsonObject(tagCriteria)) {
+      const column = typeof tagCriteria.column === 'string' ? tagCriteria.column : 'tags';
       const tag = this.getTagEditor(column);
-      if (tag) {
-        const clause = tag.parseWhere(pCache, tagCriteria);
+      if (tag instanceof PuddySqlTags) {
+        const clause = tag.parseWhere(tagCriteria, pCache);
         if (clause) whereParts.push(clause);
       }
     }
@@ -1633,7 +1787,7 @@ class TinySqlQuery {
     const orderClause = order ? `ORDER BY ${order}` : '';
 
     // Avoid selecting data if selectValue is null
-    const selectedColumns = selectValue === null ? '' : `${this.#selectGenerator(selectValue)},`;
+    const selectedColumns = selectValue === null ? '' : `${this.selectGenerator(selectValue)},`;
 
     const query = `
     WITH matched AS (
@@ -1641,7 +1795,7 @@ class TinySqlQuery {
              ROW_NUMBER() OVER (${orderClause || 'ORDER BY (SELECT 1)'}) AS rn,
              COUNT(*) OVER () AS total
       FROM ${this.#settings.name} t
-      ${this.#parseJoin(joinConfig)}
+      ${this.parseJoin(joinConfig)}
       ${whereClause}
     )
     SELECT *, rn AS position, CEIL(CAST(total AS FLOAT) / ${perPage}) AS pages
@@ -1649,7 +1803,7 @@ class TinySqlQuery {
     WHERE rn = 1
   `.trim();
 
-    const row = await this.#db.get(query, pCache.values, 'find');
+    const row = await db.get(query, pCache.values, 'find');
     if (!row) return null;
 
     const total = parseInt(row.total);
@@ -1657,6 +1811,7 @@ class TinySqlQuery {
     const position = parseInt(row.position);
     const page = Math.floor((position - 1) / perPage) + 1;
 
+    /** @type {FindResult} */
     const response = { page, pages, total, position };
 
     // If selectValue is NOT null, return the item
@@ -1666,7 +1821,7 @@ class TinySqlQuery {
       delete row.pages;
       delete row.position;
 
-      this.#jsonChecker(row);
+      this.resultChecker(row);
       response.item = row;
     }
 
@@ -1680,19 +1835,19 @@ class TinySqlQuery {
    * Supports complex logical groupings (AND/OR), flat condition style, custom ordering, and single or multiple joins.
    * Pagination can be enabled using `perPage`, and additional settings like `order`, `join`, and `limit` can be passed inside `searchData`.
    *
-   * @param {object} [searchData={}] - Main search configuration.
-   * @param {object} [searchData.q={}] - Nested criteria object.
+   * @param {Object} [searchData={}] - Main search configuration.
+   * @param {FreeObj} [searchData.q={}] - Nested criteria object.
    *        Can be a flat object style or grouped with `{ group: 'AND'|'OR', conditions: [...] }`.
-   * @param {object[]|object|null} [searchData.tagCriteria] - One or multiple tag criteria groups.
-   * @param {string[]} [searchData.tagCriteriaOps] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
-   * @param {string|string[]|object} [searchData.select='*'] - Defines which columns or expressions should be selected in the query.
+   * @param {TagCriteria[]|TagCriteria|null} [searchData.tagsQ] - One or multiple tag criteria groups.
+   * @param {string[]} [searchData.tagsOpsQ] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
+   * @param {SelectQuery} [searchData.select='*'] - Defines which columns or expressions should be selected in the query.
    * @param {number|null} [searchData.perPage=null] - Number of results per page. If set, pagination is applied.
    * @param {number} [searchData.page=1] - Page number to retrieve when `perPage` is used.
    * @param {string} [searchData.order] - Custom `ORDER BY` clause (e.g. `'created_at DESC'`).
-   * @param {string|object[]} [searchData.join] - A string for single join or array of objects for multiple joins.
+   * @param {string|JoinObj|JoinObj[]} [searchData.join] - A string for single join or array of objects for multiple joins.
    *        Each object should contain `{ table: 'name', compare: 'ON clause' }`.
    * @param {number} [searchData.limit] - Max number of results to return (ignored when `perPage` is used).
-   * @returns {Promise<object[]>} - Result rows matching the query.
+   * @returns {Promise<FreeObj[]|PaginationResult>} - Result rows matching the query.
    *
    * @example
    * // Flat search:
@@ -1730,6 +1885,7 @@ class TinySqlQuery {
    */
 
   async search(searchData = {}) {
+    const db = this.getDb();
     const order = searchData.order || this.#settings.order;
     const join = searchData.join || this.#settings.join;
     const limit = searchData.limit || null;
@@ -1740,41 +1896,44 @@ class TinySqlQuery {
     const criteria = searchData.q || {};
     const tagCriteria = searchData.tagsQ || {};
     const tagCriteriaOps = searchData.tagsOpsQ;
+
+    /** @type {Pcache} */
     const pCache = { index: 1, values: [] };
 
     // Where
     const whereParts = [];
 
     if (Object.keys(criteria).length) {
-      whereParts.push(this.#parseWhere(pCache, criteria));
+      whereParts.push(this.parseWhere(pCache, criteria));
     }
 
     if (Array.isArray(tagCriteria)) {
       const operators = Array.isArray(tagCriteriaOps) ? tagCriteriaOps : [];
 
       tagCriteria.forEach((group, i) => {
-        const column = group?.column || 'tags'; // default name if not set
+        const column = typeof group.column === 'string' ? group.column : 'tags'; // default name if not set
         const tag = this.getTagEditor(column);
-        if (!tag) return;
+        if (!(tag instanceof PuddySqlTags)) return;
 
-        const clause = tag.parseWhere(pCache, group);
+        const clause = tag.parseWhere(group, pCache);
         if (!clause) return;
 
         const op = i > 0 ? operators[i - 1] || 'AND' : null;
         if (op) whereParts.push(op);
         whereParts.push(clause);
       });
-    } else if (tagCriteria && typeof tagCriteria === 'object') {
-      const column = tagCriteria?.column || 'tags';
+    } else if (isJsonObject(tagCriteria)) {
+      const column = typeof tagCriteria.column === 'string' ? tagCriteria.column : 'tags';
       const tag = this.getTagEditor(column);
-      if (tag) {
-        const clause = tag.parseWhere(pCache, tagCriteria);
+      if (tag instanceof PuddySqlTags) {
+        const clause = tag.parseWhere(tagCriteria, pCache);
         if (clause) whereParts.push(clause);
       }
     }
 
     const whereClause = whereParts.length ? `WHERE ${whereParts.join(' ')}` : '';
     const { values } = pCache;
+    if (!Array.isArray(values)) throw new Error('Invalid pCache.values');
 
     // Order by
     const orderClause = order ? `ORDER BY ${order}` : '';
@@ -1784,8 +1943,8 @@ class TinySqlQuery {
       typeof perPage === 'number' ? '' : typeof limit === 'number' ? `LIMIT ${limit}` : '';
 
     // Query
-    const query = `SELECT ${this.#selectGenerator(selectValue)} FROM ${this.#settings.name} t 
-                       ${this.#parseJoin(join)} 
+    const query = `SELECT ${this.selectGenerator(selectValue)} FROM ${this.#settings.name} t 
+                       ${this.parseJoin(join)} 
                        ${whereClause} 
                        ${orderClause} 
                        ${limitClause}`.trim();
@@ -1795,11 +1954,11 @@ class TinySqlQuery {
 
     // Pagination
     if (typeof perPage === 'number' && perPage > -1)
-      results = await this.#pagination(query, values, perPage, page, 'search');
+      results = await this.execPagination(query, values, perPage, page, 'search');
     // Normal
     else {
-      results = await this.#db.all(query, values, 'search');
-      for (const index in results) this.#jsonChecker(results[index]);
+      results = await db.all(query, values, 'search');
+      for (const index in results) this.resultChecker(results[index]);
     }
 
     // Complete
@@ -1807,4 +1966,4 @@ class TinySqlQuery {
   }
 }
 
-export default TinySqlQuery;
+export default PuddySqlQuery;

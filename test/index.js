@@ -1,3 +1,3 @@
-import { TinySqlQuery, TinySqlTags, TinySQL } from '../dist';
+import PuddySql from '../dist';
 
-console.log(TinySqlQuery, TinySqlTags, TinySQL);
+console.log(PuddySql);

@@ -1,16 +1,29 @@
+// @ts-nocheck
 import { open } from 'sqlite';
 import sqlite3 from 'sqlite3';
-import pg from 'pg';
+import { Client } from 'pg';
 import EventEmitter from 'events';
 import { objType } from 'tiny-essentials';
 
-import TinySqlQuery from './TinySqlQuery.mjs';
-
-const { Client } = pg;
+import TinySqlQuery from './query';
 
 /**
  * TinySQL is a wrapper for basic SQL operations on a local storage abstraction.
  * It supports inserting, updating, deleting, querying and joining JSON-based structured data.
+ *
+ * @author JasminDreasond
+ * @version 1.0
+ * @date 2025-03-24
+ *
+ * Documentation written with the assistance of OpenAI's ChatGPT.
+ *
+ * License: AGPL-3.0
+ * ----------
+ * This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 class TinySQL {
   #sqlEngine;
