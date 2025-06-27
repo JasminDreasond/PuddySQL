@@ -1,3 +1,4 @@
+// @ts-nocheck
 import TimedMap from '../TimedMap';
 
 // Example usage:

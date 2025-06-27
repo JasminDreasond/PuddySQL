@@ -1,4 +1,5 @@
-import EventEmitter from 'events';
+// @ts-nocheck
+import { EventEmitter } from 'events';
 
 /**
  * A class that extends Map and emits events whenever an item is set or deleted.
