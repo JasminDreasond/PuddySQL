@@ -1,5 +1,6 @@
 # Remove original repository data
 src
+old
 test
 .babelrc
 .prettierignore

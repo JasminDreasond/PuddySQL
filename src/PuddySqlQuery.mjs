@@ -125,10 +125,24 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  */
 
 /**
+ * A function that takes a WhereConditions object and returns a modified WhereConditions object.
+ * Typically used to append or transform SQL WHERE clauses.
+ *
+ * @typedef {(conditions: WhereConditions) => WhereConditions} WhereConditionsFunc
+ */
+
+/**
+ * A map of condition identifiers to their associated transformation functions.
+ * Each key represents a named SQL condition function.
+ *
+ * @typedef {Record<string, WhereConditionsFunc>} SqlConditions
+ */
+
+/**
  * TinySQLQuery is a queries operating system developed to operate in a specific table.
  */
 class PuddySqlQuery {
-  /** @type {Record<string, function(WhereConditions) : WhereConditions>} */
+  /** @type {SqlConditions} */
   #conditions = {};
 
   /** @type {Record<string, function(string) : string>} */
@@ -241,27 +255,35 @@ class PuddySqlQuery {
   }
 
   /**
-   * Returns the condition key if it exists in the internal condition map.
-   *
-   * This method is useful for checking the existence of a condition without exposing its implementation.
+   * Checks whether a specific SQL condition function is registered.
    *
    * @param {string} key - The condition identifier to look up.
-   * @returns {string|null} The key if it exists, otherwise null.
+   * @returns {boolean} - Returns true if the condition exists, otherwise false.
    */
-  getCondition(key) {
-    if (typeof key !== 'string' || !this.#conditions[key]) return null;
-    return key;
+  hasCondition(key) {
+    if (!this.#conditions[key]) return false;
+    return true;
   }
 
   /**
-   * Retrieves a list of all registered condition keys.
+   * Retrieves a registered SQL condition function by its identifier.
    *
-   * This method returns only the list of identifiers without exposing the associated condition logic.
+   * @param {string} key - The condition identifier to retrieve.
+   * @returns {WhereConditionsFunc} - The associated condition function.
+   * @throws {Error} If the condition does not exist.
+   */
+  getCondition(key) {
+    if (!this.hasCondition(key)) throw new Error('Condition not found: ' + key);
+    return this.#conditions[key];
+  }
+
+  /**
+   * Returns a shallow copy of all registered SQL condition functions.
    *
-   * @returns {string[]} Array of all registered condition keys.
+   * @returns {SqlConditions} - An object containing all condition functions mapped by key.
    */
   getConditions() {
-    return Object.keys(this.#conditions);
+    return { ...this.#conditions };
   }
 
   /**
@@ -278,7 +300,7 @@ class PuddySqlQuery {
    * This method does not allow overwriting an existing key in either condition or value handlers.
    *
    * @param {string} key - Unique identifier for the new condition type.
-   * @param {string|WhereConditions|function(WhereConditions):WhereConditions} conditionHandler - Defines the logic or operator of the condition.
+   * @param {string|WhereConditions|WhereConditionsFunc} conditionHandler - Defines the logic or operator of the condition.
    * @param {(function(string): string)|null} [valueHandler=null] - Optional custom function for value transformation (e.g., for SOUNDEX).
    *
    * @throws {Error} If the key is not a non-empty string.
@@ -605,14 +627,6 @@ class PuddySqlQuery {
    * @returns {string} - A valid SQL expression for SELECT clause.
    */
   parseColumn(column, alias) {
-    // If column is a valid expression (e.g., COUNT(*), MAX(id)), return it as is
-    if (/^[A-Za-z0-9_\*().,]+$/.test(column)) {
-      if (alias) {
-        return `${column} AS ${alias}`;
-      }
-      return column;
-    }
-
     // If column contains an alias
     if (alias) {
       return `${column} AS ${alias}`;
@@ -800,15 +814,37 @@ class PuddySqlQuery {
   }
 
   /**
-   * Returns the PuddySqlTags instance associated with the given column name,
-   * if it was defined as a "TAGS" column during table creation.
+   * Checks whether a column is associated with a tag editor.
+   * Tag editors are used for managing tag-based columns in SQL.
+   *
+   * @param {string} name - The column name to check.
+   * @returns {boolean} - Returns true if the column has an associated tag editor.
+   */
+  hasTagEditor(name) {
+    if (this.#tagColumns[name]) return true;
+    return false;
+  }
+
+  /**
+   * Retrieves the PuddySqlTags instance associated with a specific column.
+   * Used when the column was defined as a "TAGS" column in the SQL table definition.
    *
    * @param {string} name - The column name to retrieve the tag editor for.
-   * @returns {PuddySqlTags|null} - The PuddySqlTags instance if it exists, otherwise null.
+   * @returns {PuddySqlTags} - The tag editor instance.
+   * @throws {Error} If the column is not associated with a tag editor.
    */
   getTagEditor(name) {
-    if (this.#tagColumns[name]) return this.#tagColumns[name];
-    return null;
+    if (!this.hasTagEditor(name)) throw new Error('Tag editor not found for column: ' + name);
+    return this.#tagColumns[name];
+  }
+
+  /**
+   * Returns a shallow copy of all column-to-tag-editor mappings.
+   *
+   * @returns {Record<string, PuddySqlTags>} - All tag editor instances mapped by column name.
+   */
+  getTagEditors() {
+    return { ...this.#tagColumns };
   }
 
   /**
@@ -1112,7 +1148,10 @@ class PuddySqlQuery {
       throw new Error('Invalid table settings: name and id must be defined.');
 
     const db = this.getDb();
-    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
+    const useSub =
+      this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number')
+        ? true
+        : false;
     const params = [id];
     const query = `SELECT COUNT(*) FROM ${this.#settings.name} WHERE ${this.#settings.id} = $1${useSub ? ` AND ${this.#settings.subId} = $2` : ''} LIMIT 1`;
     // @ts-ignore
@@ -1326,7 +1365,10 @@ class PuddySqlQuery {
       throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
 
     const db = this.getDb();
-    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
+    const useSub =
+      this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number')
+        ? true
+        : false;
     const params = [id];
     const query = `SELECT ${this.#settings.select} FROM ${this.#settings.name} t 
                      ${this.insertJoin()} WHERE t.${this.#settings.id} = $1${useSub ? ` AND t.${this.#settings.subId} = $2` : ''}`;
@@ -1374,7 +1416,10 @@ class PuddySqlQuery {
       throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
 
     const db = this.getDb();
-    const useSub = this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number') ? true : false;
+    const useSub =
+      this.#settings.subId && (typeof subId === 'string' || typeof subId === 'number')
+        ? true
+        : false;
     const query = `DELETE FROM ${this.#settings.name} WHERE ${this.#settings.id} = $1${useSub ? ` AND ${this.#settings.subId} = $2` : ''}`;
     const params = [id];
     // @ts-ignore
