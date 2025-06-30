@@ -4,6 +4,20 @@ import PuddySqlEngine from './PuddySqlEngine.mjs';
 import PuddySqlTags from './PuddySqlTags.mjs';
 
 /**
+ * Defines the schema structure used to create or modify SQL tables programmatically.
+ *
+ * Each entry in the array represents a single column definition as a 4-item tuple:
+ *   [columnName, columnType, columnOptions, columnMeta]
+ *
+ * - `columnName` (`string`) – The name of the column (e.g., `"id"`, `"username"`).
+ * - `columnType` (`string`) – The SQL data type (e.g., `"TEXT"`, `"INTEGER"`, `"BOOLEAN"`).
+ * - `columnOptions` (`string`) – SQL options like `NOT NULL`, `PRIMARY KEY`, `DEFAULT`, etc.
+ * - `columnMeta` (`any`) – Arbitrary metadata related to the column (e.g., for UI, descriptions, tags).
+ *
+ * @typedef {Array<[string, string, string, string]>} SqlTableConfig
+ */
+
+/**
  * Represents the result of a paginated SQL query to locate the exact position of a specific item.
  *
  * @typedef {Object} FindResult
@@ -72,6 +86,11 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  * Represents conditions used in a SQL WHERE clause.
  *
  * @typedef {Object} WhereConditions
+ * @property {'OR'|'AND'|'or'|'and'} [group] - Logical operator to combine conditions (`AND`/`OR`). Case-insensitive.
+ *                                             Only used when `conditions` is provided.
+ * @property {QueryGroup[]} [conditions] - Array of grouped `WhereConditions` or `QueryGroup` entries.
+ *                                         Used for nesting logical clauses.
+ *
  * @property {string|null|undefined} [funcName] - Optional function name applied to the column (e.g., UPPER, LOWER).
  * @property {string|null|undefined} [operator] - Comparison operator (e.g., '=', 'LIKE', 'IN').
  * @property {string|null|undefined} [value] - Value to compare against.
@@ -82,12 +101,49 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  */
 
 /**
+ * Represents a flexible condition group used in dynamic SQL WHERE clause generation.
+ *
+ * A `QueryGroup` can take two forms:
+ *
+ * 1. **Single condition object** — represents a single `WhereConditions` instance:
+ *    ```js
+ *    {
+ *      column: 'name',
+ *      operator: '=',
+ *      value: 'pudding'
+ *    }
+ *    ```
+ *
+ * 2. **Named group of conditions** — an object mapping condition names or keys
+ *    to individual `WhereConditions` objects:
+ *    ```js
+ *    {
+ *      searchByName: {
+ *        column: 'name',
+ *        operator: 'ILIKE',
+ *        value: '%fluttershy%'
+ *      },
+ *      searchByType: {
+ *        column: 'type',
+ *        operator: '=',
+ *        value: 'pegasus'
+ *      }
+ *    }
+ *    ```
+ *
+ * This structure allows dynamic grouping of multiple WHERE conditions
+ * (useful for advanced filters, tag clauses, or scoped searches).
+ *
+ * @typedef {WhereConditions | Record<string, WhereConditions>} QueryGroup
+ */
+
+/**
  * Represents a boosting rule for weighted query ranking.
  *
  * @typedef {Object} BoostValue
- * @property {string[]} columns - List of columns to apply the boost on.
+ * @property {string[]} [columns] - List of columns to apply the boost on.
  * @property {string} operator - Operator used in the condition (e.g., '=', 'LIKE').
- * @property {string} value - Value to match in the condition.
+ * @property {string|string[]} value - Value to match in the condition.
  * @property {number} weight - Weight factor to boost results matching the condition.
  */
 
@@ -378,6 +434,10 @@ class PuddySqlQuery {
    * @param {string|null} [group.funcName] - Optional override for the SQL function name
    *                                             (affects both SQL column and valType used in `#customValFunc`).
    *
+   * @throws {TypeError} If `funcName` is not a non-empty string.
+   * @throws {TypeError} If `editParamByDefault` is provided and is not a boolean.
+   * @throws {TypeError} If `operator` is not a non-empty string.
+   *
    * --------------------------------------------------------------------------------
    * How it's used in the system:
    *
@@ -425,8 +485,15 @@ class PuddySqlQuery {
    *
    * // Result: CEIL(price) > 3
    */
-  addConditionV2 = (funcName, editParamByDefault = false, operator = '=') =>
-    this.addCondition(
+  addConditionV2 = (funcName, editParamByDefault = false, operator = '=') => {
+    if (typeof funcName !== 'string' || funcName.trim() === '')
+      throw new TypeError(`funcName must be a non-empty string. Received: ${funcName}`);
+    if (typeof editParamByDefault !== 'boolean')
+      throw new TypeError(`editParamByDefault must be a boolean. Received: ${editParamByDefault}`);
+    if (typeof operator !== 'string' || operator.trim() === '')
+      throw new TypeError(`operator must be a non-empty string. Received: ${operator}`);
+
+    return this.addCondition(
       funcName,
       (condition) => ({
         operator: typeof condition.newOp === 'string' ? condition.newOp : operator,
@@ -440,6 +507,7 @@ class PuddySqlQuery {
       }),
       (param) => `${funcName}(${param})`,
     );
+  };
 
   /**
    * Generates a SELECT clause based on the input, supporting SQL expressions, aliases,
@@ -464,8 +532,12 @@ class PuddySqlQuery {
    *
    * Escaping of all values is handled by `pg.escapeLiteral()` for SQL safety (PostgreSQL).
    *
-   * @param {SelectQuery} input - Select clause definition.
+   * @param {SelectQuery} [input = '*'] - Select clause definition.
    * @returns {string} - A valid SQL SELECT clause string.
+   *
+   * @throws {TypeError} If the input is of an invalid type.
+   * @throws {Error} If `boost.alias` is missing or not a string.
+   * @throws {Error} If `boost.value` is present but not an array.
    *
    * @example
    * this.selectGenerator();
@@ -527,8 +599,9 @@ class PuddySqlQuery {
    * //   ELSE 0
    * // END AS relevance, id AS image_id, uploader AS user_name, created_at
    */
-  selectGenerator(input) {
-    if (!input) return '*';
+  selectGenerator(input = '*') {
+    // If input is a string, treat it as a custom SQL expression
+    if (typeof input === 'string') return this.parseColumn(input);
 
     /**
      * Boost parser helper
@@ -538,31 +611,48 @@ class PuddySqlQuery {
      * @returns {string}
      */
     const parseAdvancedBoosts = (boostArray, alias) => {
+      if (!Array.isArray(boostArray))
+        throw new Error(`Boost 'value' must be an array. Received: ${typeof boostArray}`);
+      if (typeof alias !== 'string')
+        throw new Error(`Boost 'alias' must be an string. Received: ${typeof alias}`);
       const cases = [];
 
+      // Boost
       for (const boost of boostArray) {
         const { columns, operator = 'LIKE', value, weight = 1 } = boost;
-
+        if (typeof operator !== 'string')
+          throw new Error(`operator requires an string value. Got: ${typeof operator}`);
         const opValue = operator.toUpperCase();
+        if (typeof weight !== 'number' || Number.isNaN(weight))
+          throw new Error(`Boost 'weight' must be a valid number. Got: ${weight}`);
 
         if (!columns) {
+          if (typeof value !== 'string')
+            throw new Error(
+              `Boost with no columns must provide a raw SQL string condition. Got: ${typeof value}`,
+            );
+
           // No columns: treat value as raw condition
           cases.push(`WHEN ${value} THEN ${weight}`);
           continue;
         }
 
+        if (!Array.isArray(columns) || columns.some((col) => typeof col !== 'string'))
+          throw new Error(`Boost 'columns' must be a string or array of strings. Got: ${columns}`);
+
         if (opValue === 'IN') {
+          if (!Array.isArray(value))
+            throw new Error(`'${opValue}' operator requires an array value. Got: ${typeof value}`);
+
           const conditions = columns.map((col) => {
-            if (Array.isArray(value)) {
-              const inList = value.map((v) => pg.escapeLiteral(v)).join(', ');
-              return `${col} IN (${inList})`;
-            } else {
-              console.warn(`IN operator expected array, got`, value);
-              return 'FALSE';
-            }
+            const inList = value.map((v) => pg.escapeLiteral(v)).join(', ');
+            return `${col} IN (${inList})`;
           });
           cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
         } else {
+          if (typeof value !== 'string')
+            throw new Error(`'${opValue}' operator requires an string value. Got: ${typeof value}`);
+
           const safeVal = pg.escapeLiteral(
             ['LIKE', 'ILIKE'].includes(opValue) ? `%${value}%` : value,
           );
@@ -585,37 +675,50 @@ class PuddySqlQuery {
     }
 
     // If input is an object, handle key-value pairs for aliasing (with boosts support)
-    if (isJsonObject(input)) {
+    else if (isJsonObject(input)) {
       /** @type {string[]} */
       let result = [];
+
       // Processing aliases
-      if (input.aliases)
+      if (input.aliases) {
+        if (!isJsonObject(input.aliases))
+          throw new TypeError(`'aliases' must be an object. Got: ${typeof input.aliases}`);
         result = result.concat(
           Object.entries(input.aliases).map(([col, alias]) => this.parseColumn(col, alias)),
         );
+      }
 
       // If input is an array, join all columns
-      if (Array.isArray(input.values))
+      if (input.values) {
+        if (!Array.isArray(input.values))
+          throw new TypeError(`'values' must be an array. Got: ${typeof input.values}`);
         result.push(...input.values.map((col) => this.parseColumn(col)));
+      }
 
       // Processing boosts
-      if (isJsonObject(input.boost)) {
+      if (input.boost) {
+        if (!isJsonObject(input.boost))
+          throw new TypeError(`'boost' must be an object. Got: ${typeof input.boost}`);
+
         if (typeof input.boost.alias !== 'string')
           throw new Error('Missing or invalid boost.alias in selectGenerator');
-        if (Array.isArray(input.boost.value))
+        if (input.boost.value)
           result.push(parseAdvancedBoosts(input.boost.value, input.boost.alias));
       }
 
       // Complete
-      return result.join(', ') || '*';
+      if (result.length > 0) return result.join(', ');
+      else
+        throw new Error(
+          `Invalid input object keys for selectGenerator. Expected non-empty string.`,
+        );
     }
 
-    // If input is a string, treat it as a custom SQL expression
-    if (typeof input === 'string') {
-      return this.parseColumn(input);
-    }
-
-    return '*';
+    // Nothing
+    else
+      throw new Error(
+        `Invalid input type for selectGenerator. Expected string, array, or object but received: ${typeof input}`,
+      );
   }
 
   /**
@@ -627,6 +730,11 @@ class PuddySqlQuery {
    * @returns {string} - A valid SQL expression for SELECT clause.
    */
   parseColumn(column, alias) {
+    if (typeof column !== 'string')
+      throw new TypeError(`column key must be string. Got: ${column}.`);
+    if (typeof alias !== 'undefined' && typeof alias !== 'string')
+      throw new TypeError(`Alias key must be string. Got: ${alias}.`);
+
     // If column contains an alias
     if (alias) {
       return `${column} AS ${alias}`;
@@ -637,6 +745,16 @@ class PuddySqlQuery {
 
   // Helpers for JSON operations within SQL queries (SQLite-compatible)
 
+  /**
+   * @param {any} value
+   * @returns {string}
+   */
+  #sqlOpStringVal = (value) => {
+    if (typeof value !== 'string')
+      throw new Error(`SQL Op value must be string. Got: ${typeof value}.`);
+    return value;
+  };
+
   // Example: WHERE json_extract(data, '$.name') = 'Rainbow Queen'
   /**
    * Extracts the value of a key from a JSON object using SQLite's json_extract function.
@@ -644,7 +762,8 @@ class PuddySqlQuery {
    * @param {string} name - The key or path to extract (dot notation).
    * @returns {string} SQL snippet to extract a value from JSON.
    */
-  getJsonExtract = (where = '', name = '') => `json_extract(${where}, '$.${name}')`;
+  getJsonExtract = (where = '', name = '') =>
+    `json_extract(${this.#sqlOpStringVal(where)}, '$.${this.#sqlOpStringVal(name)}')`;
 
   /**
    * Expands each element in a JSON array or each property in a JSON object into separate rows.
@@ -652,7 +771,7 @@ class PuddySqlQuery {
    * @param {string} source - JSON column or expression to expand.
    * @returns {string} SQL snippet calling json_each.
    */
-  getJsonEach = (source = '') => `json_each(${source})`;
+  getJsonEach = (source = '') => `json_each(${this.#sqlOpStringVal(source)})`;
 
   // Example: FROM json_each(json_extract(data, '$.tags'))
   /**
@@ -673,56 +792,104 @@ class PuddySqlQuery {
    * @returns {string} SQL snippet with cast applied.
    */
   getJsonCast = (where = '', name = '', type = 'NULL') =>
-    `CAST(${this.getJsonExtract(where, name)} AS ${type.toUpperCase()})`;
+    `CAST(${this.getJsonExtract(where, name)} AS ${this.#sqlOpStringVal(type).toUpperCase()})`;
 
   /**
    * Updates the table by adding, removing, modifying or renaming columns.
-   * @param {Array<Array<string|any>>} changes - An array of changes to be made to the table.
+   * @param {SqlTableConfig} changes - An array of changes to be made to the table.
    * Each change is defined by an array, where:
    *   - To add a column: ['ADD', 'columnName', 'columnType', 'columnOptions']
    *   - To remove a column: ['REMOVE', 'columnName']
    *   - To modify a column: ['MODIFY', 'columnName', 'newColumnType', 'newOptions']
    *   - To rename a column: ['RENAME', 'oldColumnName', 'newColumnName']
    * @returns {Promise<void>}
+   *
+   * @throws {TypeError} If `changes` is not an array of arrays.
+   * @throws {Error} If any change has missing or invalid parameters.
    */
   async updateTable(changes) {
     const db = this.getDb();
 
-    for (const change of changes) {
-      const action = change[0];
+    if (!Array.isArray(changes))
+      throw new TypeError(`Expected 'changes' to be an array of arrays. Got: ${typeof changes}`);
 
-      if (action === 'ADD') {
-        const query = `ALTER TABLE ${this.#settings.name} ADD COLUMN ${change[1]} ${change[2]} ${change[3] || ''}`;
-        try {
-          await db.run(query, undefined, 'updateTable - ADD');
-        } catch (error) {
-          console.error('[sql] [updateTable - ADD] Error adding column:', error);
+    const tableName = this.#settings?.name;
+    if (!tableName) throw new Error('Missing table name in settings');
+
+    for (const change of changes) {
+      const [action, ...args] = change;
+      if (!Array.isArray(change))
+        throw new TypeError(
+          `Expected 'change value' to be an array of arrays. Got: ${typeof change}`,
+        );
+      if (typeof action !== 'string')
+        throw new TypeError(`Action type must be a string. Got: ${typeof action}`);
+
+      switch (action.toUpperCase()) {
+        case 'ADD': {
+          const [colName, colType, colOptions = ''] = args;
+          if (typeof colName !== 'string' || typeof colType !== 'string')
+            throw new Error(`Invalid parameters for ADD: ${JSON.stringify(args)}`);
+
+          const query = `ALTER TABLE ${tableName} ADD COLUMN ${colName} ${colType} ${colOptions}`;
+          try {
+            await db.run(query, undefined, 'updateTable - ADD');
+          } catch (err) {
+            console.error('[sql] [updateTable - ADD] Error adding column:', err);
+          }
+          break;
         }
-      } else if (action === 'REMOVE') {
-        const query = `ALTER TABLE ${this.#settings.name} DROP COLUMN IF EXISTS ${change[1]}`;
-        try {
-          await db.run(query, undefined, 'updateTable - REMOVE');
-        } catch (error) {
-          console.error('[sql] [updateTable - REMOVE] Error removing column:', error);
+
+        case 'REMOVE': {
+          const [colName] = args;
+          if (typeof colName !== 'string')
+            throw new Error(`Invalid parameters for REMOVE: ${JSON.stringify(args)}`);
+
+          const query = `ALTER TABLE ${tableName} DROP COLUMN IF EXISTS ${colName}`;
+          try {
+            await db.run(query, undefined, 'updateTable - REMOVE');
+          } catch (err) {
+            console.error('[sql] [updateTable - REMOVE] Error removing column:', err);
+          }
+          break;
         }
-      } else if (action === 'MODIFY') {
-        const query = `ALTER TABLE ${this.#settings.name} ALTER COLUMN ${change[1]} TYPE ${change[2]}${
-          change[3] ? `, ALTER COLUMN ${change[1]} SET ${change[3]}` : ''
-        }`;
-        try {
-          await db.run(query, undefined, 'updateTable - MODIFY');
-        } catch (error) {
-          console.error('[sql] [updateTable - MODIFY] Error modifying column:', error);
+
+        case 'MODIFY': {
+          const [colName, newType, newOptions] = args;
+          if (
+            typeof colName !== 'string' ||
+            typeof newType !== 'string' ||
+            (typeof newOptions !== 'undefined' && typeof newOptions !== 'string')
+          )
+            throw new Error(`Invalid parameters for MODIFY: ${JSON.stringify(args)}`);
+
+          const query = `ALTER TABLE ${tableName} ALTER COLUMN ${colName} TYPE ${newType}${
+            newOptions ? `, ALTER COLUMN ${colName} SET ${newOptions}` : ''
+          }`;
+          try {
+            await db.run(query, undefined, 'updateTable - MODIFY');
+          } catch (err) {
+            console.error('[sql] [updateTable - MODIFY] Error modifying column:', err);
+          }
+          break;
         }
-      } else if (action === 'RENAME') {
-        const query = `ALTER TABLE ${this.#settings.name} RENAME COLUMN ${change[1]} TO ${change[2]}`;
-        try {
-          await db.run(query, undefined, 'updateTable - RENAME');
-        } catch (error) {
-          console.error('[sql] [updateTable - RENAME] Error renaming column:', error);
+
+        case 'RENAME': {
+          const [oldName, newName] = args;
+          if (typeof oldName !== 'string' || typeof newName !== 'string')
+            throw new Error(`Invalid parameters for RENAME: ${JSON.stringify(args)}`);
+
+          const query = `ALTER TABLE ${tableName} RENAME COLUMN ${oldName} TO ${newName}`;
+          try {
+            await db.run(query, undefined, 'updateTable - RENAME');
+          } catch (err) {
+            console.error('[sql] [updateTable - RENAME] Error renaming column:', err);
+          }
+          break;
         }
-      } else {
-        console.warn(`[sql] [updateTable] Unknown updateTable action: ${action}`);
+
+        default:
+          console.warn(`[sql] [updateTable] Unknown updateTable action: ${action}`);
       }
     }
   }
@@ -759,22 +926,41 @@ class PuddySqlQuery {
    * If a column type is "TAGS", it will be replaced with "JSON" for SQL purposes,
    * and registered in #tagColumns using a PuddySqlTags instance,
    * but the original "TAGS" value will be preserved in this.#table.
-   * @param {Array<Array<string|any>>} columns - An array of column definitions.
+   * @param {SqlTableConfig} columns - An array of column definitions.
    * Each column is defined by an array containing the column name, type, and optional configurations.
    * @returns {Promise<void>}
+   *
+   * @throws {TypeError} If any column definition is malformed.
+   * @throws {Error} If table name is not defined in settings.
    */
   async createTable(columns) {
     const db = this.getDb();
+    const tableName = this.#settings?.name;
+    if (!tableName || typeof tableName !== 'string')
+      throw new Error('Table name not defined in this.#settings.name');
+
+    if (!Array.isArray(columns))
+      throw new TypeError(`Expected columns to be an array. Got: ${typeof columns}`);
+
     // Start building the query
-    let query = 'CREATE TABLE IF NOT EXISTS ' + this.#settings.name + ' (';
+    let query = `CREATE TABLE IF NOT EXISTS ${tableName} (`;
 
     // Internal processing for SQL only (preserve original for #table)
-    const sqlColumns = columns.map((column) => {
+    const sqlColumns = columns.map((column, i) => {
+      if (!Array.isArray(column))
+        throw new TypeError(
+          `Column definition at index ${i} must be an array. Got: ${typeof column}`,
+        );
+
       const col = [...column]; // shallow clone to avoid mutating original
 
       // Prepare to detect custom column type
       if (col.length >= 2 && typeof col[1] === 'string') {
         const [name, type] = col;
+        if (typeof name !== 'string')
+          throw new Error(`Expected 'name' to be string in index "${i}", got ${typeof name}`);
+        if (typeof type !== 'string')
+          throw new Error(`Expected 'type' to be string in index "${i}", got ${typeof type}`);
         // Tags
         if (type.toUpperCase() === 'TAGS') {
           col[1] = 'JSON';
@@ -783,15 +969,31 @@ class PuddySqlQuery {
       }
 
       // If the column definition contains more than two items, it's a full definition
-      if (col.length === 3) return `${col[0]} ${col[1]} ${col[2]}`;
+      if (col.length === 3) {
+        if (typeof col[0] !== 'string')
+          throw new Error(`Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`);
+        if (typeof col[1] !== 'string')
+          throw new Error(`Expected 'col[1]' to be string in index "${i}", got ${typeof col[1]}`);
+        if (typeof col[2] !== 'string')
+          throw new Error(`Expected 'col[2]' to be string in index "${i}", got ${typeof col[2]}`);
+        return `${col[0]} ${col[1]} ${col[2]}`;
+      }
       // If only two items are provided, it's just the name and type (no additional configuration)
       else if (col.length === 2) {
+        if (typeof col[0] !== 'string')
+          throw new Error(`Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`);
+        if (typeof col[1] !== 'string')
+          throw new Error(`Expected 'col[1]' to be string in index "${i}", got ${typeof col[1]}`);
         return `${col[0]} ${col[1]}`;
       }
       // If only one item is provided, it's a table setting (e.g., PRIMARY KEY)
-      else {
+      else if (col.length === 1) {
+        if (typeof col[0] !== 'string')
+          throw new Error(`Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`);
         return col[0];
       }
+
+      throw new TypeError(`Invalid column definition at index ${i}: ${JSON.stringify(col)}`);
     });
 
     // Join all column definitions into a single string
@@ -802,9 +1004,22 @@ class PuddySqlQuery {
 
     // Save the table structure using an object with column names as keys
     this.#table = {};
-    for (const column of columns) {
+    for (const i in columns) {
+      const column = columns[i];
       if (column.length >= 2) {
         const [name, type, options] = column;
+        if (typeof name !== 'string')
+          throw new Error(
+            `Invalid name of column definition at index ${i}: ${JSON.stringify(column)}`,
+          );
+        if (typeof type !== 'undefined' && typeof type !== 'string')
+          throw new Error(
+            `Invalid type of column definition at index ${i}: ${JSON.stringify(column)}`,
+          );
+        if (typeof options !== 'undefined' && typeof options !== 'string')
+          throw new Error(
+            `Invalid options of column definition at index ${i}: ${JSON.stringify(column)}`,
+          );
         this.#table[name] = {
           type: typeof type === 'string' ? type.toUpperCase().trim() : null,
           options: typeof options === 'string' ? options.toUpperCase().trim() : null,
@@ -834,7 +1049,8 @@ class PuddySqlQuery {
    * @throws {Error} If the column is not associated with a tag editor.
    */
   getTagEditor(name) {
-    if (!this.hasTagEditor(name)) throw new Error('Tag editor not found for column: ' + name);
+    if (typeof name !== 'string' || name.length < 1 || !this.hasTagEditor(name))
+      throw new Error('Tag editor not found for column: ' + name);
     return this.#tagColumns[name];
   }
 
@@ -1066,7 +1282,7 @@ class PuddySqlQuery {
    * @param {PuddySqlEngine} [db] - PuddySql Instance.
    */
   setDb(settings = {}, db) {
-    if (!isJsonObject(settings)) throw new Error('Settings must be a plain object.');
+    if (!isJsonObject(settings)) throw new TypeError('Settings must be a plain object.');
     if (!(db instanceof PuddySqlEngine))
       throw new Error('Invalid type for db. Expected a PuddySql.');
     this.#db = db;
@@ -1201,18 +1417,15 @@ class PuddySqlQuery {
    * generate the conditions, and updates the given fields in valueObj.
    *
    * @param {FreeObj} valueObj - An object representing the columns and new values for the update.
-   * @param {FreeObj} filter - An object containing the conditions for the WHERE clause.
+   * @param {QueryGroup} filter - An object containing the conditions for the WHERE clause.
    * @returns {Promise<number>} - Count of rows that were updated.
    */
   async advancedUpdate(valueObj = {}, filter = {}) {
     const db = this.getDb();
     // Validate parameters
-    if (!isJsonObject(filter)) {
-      throw new Error('Invalid filter object for advancedUpdate');
-    }
-    if (!isJsonObject(valueObj) || Object.keys(valueObj).length === 0) {
+    if (!isJsonObject(filter)) throw new Error('Invalid filter object for advancedUpdate');
+    if (!isJsonObject(valueObj) || Object.keys(valueObj).length === 0)
       throw new Error('No update values provided for advancedUpdate');
-    }
 
     // Set the SET clause and its parameters
     const columns = Object.keys(valueObj);
@@ -1246,6 +1459,11 @@ class PuddySqlQuery {
    */
   async update(id, valueObj = {}) {
     const db = this.getDb();
+    if (typeof id !== 'string' && typeof id !== 'number')
+      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+    if (!isJsonObject(valueObj) || Object.keys(valueObj).length === 0)
+      throw new Error('No update values provided for update');
+
     const columns = Object.keys(valueObj);
     const values = Object.values(valueObj).map((v, index) =>
       this.escapeValuesFix(v, columns[index]),
@@ -1279,6 +1497,52 @@ class PuddySqlQuery {
    */
   async set(id, valueObj = {}, onlyIfNew = false) {
     const db = this.getDb();
+    // Validate 'onlyIfNew'
+    if (typeof onlyIfNew !== 'boolean')
+      throw new TypeError(`Expected 'onlyIfNew' to be a boolean, but got ${typeof onlyIfNew}`);
+
+    // Validate 'valueObj'
+    const isValidArray = Array.isArray(valueObj);
+    if (!isValidArray && !isJsonObject(valueObj))
+      throw new TypeError(
+        `Expected 'valueObj' to be an object or array of objects. Got: ${typeof valueObj}`,
+      );
+
+    // Validate empty object
+    if (!isValidArray && Object.keys(valueObj).length === 0)
+      throw new Error(`No update values provided for 'set()'`);
+
+    // Array form validations
+    if (isValidArray) {
+      if (!Array.isArray(id))
+        throw new Error(
+          `When 'valueObj' is an array, 'id' must also be an array (got ${typeof id})`,
+        );
+
+      if (id.length !== valueObj.length)
+        throw new Error(
+          `Length mismatch: 'id' has ${id.length} items, but 'valueObj' has ${valueObj.length}`,
+        );
+
+      // Validate that all entries in valueObj are valid objects with the same keys
+      const expectedKeys = Object.keys(valueObj[0] ?? {});
+      for (let i = 0; i < valueObj.length; i++) {
+        const obj = valueObj[i];
+        if (!isJsonObject(obj))
+          throw new TypeError(`Item at index ${i} in 'valueObj' is not a valid object`);
+
+        const keys = Object.keys(obj);
+        if (keys.length !== expectedKeys.length || !keys.every((k) => expectedKeys.includes(k)))
+          throw new Error(
+            `Mismatched keys in 'valueObj' at index ${i}. Expected: [${expectedKeys.join(', ')}], got: [${keys.join(', ')}]`,
+          );
+      }
+    } else {
+      // Single ID mode
+      if (typeof id !== 'string' && typeof id !== 'number')
+        throw new TypeError(`Expected 'id' to be a string or number when using single value mode`);
+    }
+
     // Prepare validator
     const isArray = Array.isArray(valueObj);
     const objects = isArray ? valueObj : [valueObj];
@@ -1384,7 +1648,7 @@ class PuddySqlQuery {
    *
    * Uses the internal parseWhere method to build a flexible condition set.
    *
-   * @param {FreeObj} filter - An object containing the WHERE condition(s).
+   * @param {QueryGroup} filter - An object containing the WHERE condition(s).
    * @returns {Promise<number>} - Number of rows deleted.
    */
   async advancedDelete(filter = {}) {
@@ -1439,6 +1703,11 @@ class PuddySqlQuery {
    */
   async getAmount(count, filterId = null, selectValue = '*') {
     const db = this.getDb();
+    if (typeof count !== 'number')
+      throw new Error(`Expected 'count' to be number, got ${typeof count}`);
+    if (filterId !== null && typeof filterId !== 'string' && typeof filterId !== 'number')
+      throw new Error(`Expected 'filterId' to be string or number, got ${typeof filterId}`);
+
     const orderClause = this.#settings.order ? `ORDER BY ${this.#settings.order}` : '';
     const whereClause = filterId !== null ? `WHERE t.${this.#settings.id} = $1` : '';
     const limitClause = `LIMIT $${filterId !== null ? 2 : 1}`;
@@ -1461,6 +1730,8 @@ class PuddySqlQuery {
    * @returns {Promise<FreeObj[]>}
    */
   async getAll(filterId = null, selectValue = '*') {
+    if (filterId !== null && typeof filterId !== 'string' && typeof filterId !== 'number')
+      throw new Error(`Expected 'filterId' to be string or number, got ${typeof filterId}`);
     const db = this.getDb();
     const orderClause = this.#settings.order ? `ORDER BY ${this.#settings.order}` : '';
     const whereClause = filterId !== null ? `WHERE t.${this.#settings.id} = $1` : '';
@@ -1544,7 +1815,7 @@ class PuddySqlQuery {
    * - Dynamic operators through the internal `#conditions` handler.
    *
    * @param {Pcache} [pCache={ index: 1, values: [] }] - Placeholder cache object.
-   * @param {FreeObj} [group={}] - Grouped or single filter condition.
+   * @param {QueryGroup} [group={}] - Grouped or single filter condition.
    * @returns {string} SQL-formatted WHERE clause (without the "WHERE" keyword).
    *
    * @example
@@ -1771,7 +2042,7 @@ class PuddySqlQuery {
    * If selectValue is null, it only returns the pagination/position data, not the item itself.
    *
    * @param {Object} [searchData={}] - Main search configuration.
-   * @param {FreeObj} [searchData.q={}] - Nested criteria object.
+   * @param {QueryGroup} [searchData.q={}] - Nested criteria object.
    * @param {TagCriteria[]|TagCriteria|null} [searchData.tagCriteria] - One or multiple tag criteria groups.
    * @param {string[]} [searchData.tagCriteriaOps] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
    * @param {number} [searchData.perPage] - Number of items per page.
@@ -1779,9 +2050,13 @@ class PuddySqlQuery {
    * @param {string} [searchData.order] - SQL ORDER BY clause. Defaults to configured order.
    * @param {string|JoinObj|JoinObj[]} [searchData.join] - JOIN definitions with table, compare, and optional type.
    * @returns {Promise<FindResult | null>}
+   * @throws {Error} If searchData has invalid structure or values.
    */
   async find(searchData = {}) {
     const db = this.getDb();
+
+    // --- Validate searchData types ---
+    if (!isJsonObject(searchData)) throw new TypeError(`'searchData' must be a object`);
     const criteria = searchData.q || {};
     const tagCriteria = searchData.tagCriteria || null;
     const tagCriteriaOps = Array.isArray(searchData.tagCriteriaOps)
@@ -1793,8 +2068,30 @@ class PuddySqlQuery {
     const order = searchData.order || this.#settings.order;
     const joinConfig = searchData.join || null;
 
-    if (!isJsonObject(criteria)) return null;
-    if (typeof perPage !== 'number' || perPage < 1) throw new Error('Invalid perPage value');
+    if (!isJsonObject(criteria))
+      throw new TypeError(`'searchData.q' must be a plain object or nested QueryGroup`);
+
+    if (perPage == null || typeof perPage !== 'number' || !Number.isInteger(perPage) || perPage < 1)
+      throw new Error(`'searchData.perPage' must be a positive integer (≥ 1), got: ${perPage}`);
+
+    if (
+      selectValue !== null &&
+      typeof selectValue !== 'string' &&
+      !Array.isArray(selectValue) &&
+      !isJsonObject(selectValue)
+    )
+      throw new TypeError(`'searchData.select' must be a string, array, object or null`);
+
+    if (order !== undefined && order !== null && typeof order !== 'string')
+      throw new TypeError(`'searchData.order' must be a string if defined`);
+
+    if (
+      joinConfig !== null &&
+      typeof joinConfig !== 'string' &&
+      !Array.isArray(joinConfig) &&
+      !isJsonObject(joinConfig)
+    )
+      throw new TypeError(`'searchData.join' must be a string, object, array, or null`);
 
     /** @type {Pcache} */
     const pCache = { index: 1, values: [] };
@@ -1808,10 +2105,12 @@ class PuddySqlQuery {
     // Apply tagCriteria logic
     if (Array.isArray(tagCriteria)) {
       tagCriteria.forEach((group, i) => {
-        const column = typeof group.column === 'string' ? group.column : 'tags';
-        const tag = this.getTagEditor(column);
-        if (!(tag instanceof PuddySqlTags)) return;
+        if (!isJsonObject(group) || typeof group.column !== 'string')
+          throw new TypeError(`Each item in 'tagCriteria' must be an object`);
+        if (typeof group.column !== 'undefined' && typeof group.column !== 'string')
+          throw new TypeError(`'group.column' must be a string if defined`);
 
+        const tag = this.getTagEditor(group.column);
         const clause = tag.parseWhere(group, pCache);
         if (!clause) return;
 
@@ -1819,13 +2118,13 @@ class PuddySqlQuery {
         if (op) whereParts.push(op);
         whereParts.push(clause);
       });
-    } else if (isJsonObject(tagCriteria)) {
-      const column = typeof tagCriteria.column === 'string' ? tagCriteria.column : 'tags';
-      const tag = this.getTagEditor(column);
-      if (tag instanceof PuddySqlTags) {
-        const clause = tag.parseWhere(tagCriteria, pCache);
-        if (clause) whereParts.push(clause);
-      }
+    } else if (isJsonObject(tagCriteria) && typeof tagCriteria.column === 'string') {
+      if (typeof tagCriteria.column !== 'undefined' && typeof tagCriteria.column !== 'string')
+        throw new TypeError(`'tagCriteria.column' must be a string if defined`);
+
+      const tag = this.getTagEditor(tagCriteria.column);
+      const clause = tag.parseWhere(tagCriteria, pCache);
+      if (clause) whereParts.push(clause);
     }
 
     const whereClause = whereParts.length ? `WHERE ${whereParts.join(' ')}` : '';
@@ -1881,7 +2180,7 @@ class PuddySqlQuery {
    * Pagination can be enabled using `perPage`, and additional settings like `order`, `join`, and `limit` can be passed inside `searchData`.
    *
    * @param {Object} [searchData={}] - Main search configuration.
-   * @param {FreeObj} [searchData.q={}] - Nested criteria object.
+   * @param {QueryGroup} [searchData.q={}] - Nested criteria object.
    *        Can be a flat object style or grouped with `{ group: 'AND'|'OR', conditions: [...] }`.
    * @param {TagCriteria[]|TagCriteria|null} [searchData.tagsQ] - One or multiple tag criteria groups.
    * @param {string[]} [searchData.tagsOpsQ] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
@@ -1893,6 +2192,7 @@ class PuddySqlQuery {
    *        Each object should contain `{ table: 'name', compare: 'ON clause' }`.
    * @param {number} [searchData.limit] - Max number of results to return (ignored when `perPage` is used).
    * @returns {Promise<FreeObj[]|PaginationResult>} - Result rows matching the query.
+   * @throws {Error} If searchData has invalid structure or values.
    *
    * @example
    * // Flat search:
@@ -1931,6 +2231,7 @@ class PuddySqlQuery {
 
   async search(searchData = {}) {
     const db = this.getDb();
+    if (!isJsonObject(searchData)) throw new TypeError(`'searchData' must be a object`);
     const order = searchData.order || this.#settings.order;
     const join = searchData.join || this.#settings.join;
     const limit = searchData.limit || null;
@@ -1941,6 +2242,47 @@ class PuddySqlQuery {
     const criteria = searchData.q || {};
     const tagCriteria = searchData.tagsQ || {};
     const tagCriteriaOps = searchData.tagsOpsQ;
+
+    // --- Validate searchData types ---
+    if (!isJsonObject(criteria))
+      throw new TypeError(`'searchData.q' must be a plain object or valid QueryGroup`);
+
+    if (
+      selectValue !== null &&
+      typeof selectValue !== 'string' &&
+      !Array.isArray(selectValue) &&
+      !isJsonObject(selectValue)
+    )
+      throw new TypeError(`'searchData.select' must be a string, array, object or null`);
+
+    if (order !== undefined && order !== null && typeof order !== 'string')
+      throw new TypeError(`'searchData.order' must be a string if defined`);
+
+    if (join !== null && typeof join !== 'string' && !Array.isArray(join) && !isJsonObject(join))
+      throw new TypeError(`'searchData.join' must be a string, array, object or null`);
+
+    if (limit !== null && typeof limit !== 'number')
+      throw new TypeError(`'searchData.limit' must be a number if defined`);
+
+    if (
+      perPage !== null &&
+      (typeof perPage !== 'number' || !Number.isInteger(perPage) || perPage < 1)
+    )
+      throw new TypeError(`'searchData.perPage' must be a positive integer if defined`);
+
+    if (typeof page !== 'number' || !Number.isInteger(page) || page < 1)
+      throw new TypeError(`'searchData.page' must be a positive integer`);
+
+    if (
+      tagCriteria !== undefined &&
+      tagCriteria !== null &&
+      !Array.isArray(tagCriteria) &&
+      !isJsonObject(tagCriteria)
+    )
+      throw new TypeError(`'searchData.tagsQ' must be an array, object or null`);
+
+    if (tagCriteriaOps !== undefined && tagCriteriaOps !== null && !Array.isArray(tagCriteriaOps))
+      throw new TypeError(`'searchData.tagsOpsQ' must be an array if defined`);
 
     /** @type {Pcache} */
     const pCache = { index: 1, values: [] };
@@ -1956,10 +2298,10 @@ class PuddySqlQuery {
       const operators = Array.isArray(tagCriteriaOps) ? tagCriteriaOps : [];
 
       tagCriteria.forEach((group, i) => {
-        const column = typeof group.column === 'string' ? group.column : 'tags'; // default name if not set
-        const tag = this.getTagEditor(column);
-        if (!(tag instanceof PuddySqlTags)) return;
+        if (!isJsonObject(group) || typeof group.column !== 'string')
+          throw new TypeError(`Each item in 'tagsQ' must be a valid object`);
 
+        const tag = this.getTagEditor(group.column);
         const clause = tag.parseWhere(group, pCache);
         if (!clause) return;
 
@@ -1967,13 +2309,10 @@ class PuddySqlQuery {
         if (op) whereParts.push(op);
         whereParts.push(clause);
       });
-    } else if (isJsonObject(tagCriteria)) {
-      const column = typeof tagCriteria.column === 'string' ? tagCriteria.column : 'tags';
-      const tag = this.getTagEditor(column);
-      if (tag instanceof PuddySqlTags) {
-        const clause = tag.parseWhere(tagCriteria, pCache);
-        if (clause) whereParts.push(clause);
-      }
+    } else if (isJsonObject(tagCriteria) && typeof tagCriteria.column === 'string') {
+      const tag = this.getTagEditor(tagCriteria.column);
+      const clause = tag.parseWhere(tagCriteria, pCache);
+      if (clause) whereParts.push(clause);
     }
 
     const whereClause = whereParts.length ? `WHERE ${whereParts.join(' ')}` : '';

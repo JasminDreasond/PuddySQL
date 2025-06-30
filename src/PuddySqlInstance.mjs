@@ -19,6 +19,7 @@ class PuddySqlInstance extends PuddySqlEngine {
   }
 
   /** @typedef {import('./PuddySqlQuery.mjs').TableSettings} TableSettings */
+  /** @typedef {import('./PuddySqlQuery.mjs').SqlTableConfig} SqlTableConfig */
 
   // @ts-ignore
   #db;
@@ -414,7 +415,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * Additional settings can be provided to customize the behavior of the table (e.g., `select`, `order`, `id`).
    *
    * @param {TableSettings} [settings={}] - Optional settings to customize the table creation. This can include properties like `select`, `join`, `order`, `id`, etc.
-   * @param {Array<Array<string>>} [tableData=[]] - An array of columns and their definitions to create the table. Each column is defined by an array, which can include column name, type, and additional settings.
+   * @param {SqlTableConfig} [tableData=[]] - An array of columns and their definitions to create the table. Each column is defined by an array, which can include column name, type, and additional settings.
    * @returns {Promise<PuddySqlQuery>} Resolves to the `PuddySqlQuery` instance associated with the created or existing table.
    * @throws {Error} If the table has already been initialized.
    */
