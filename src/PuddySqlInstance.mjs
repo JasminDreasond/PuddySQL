@@ -2,6 +2,7 @@ import { open, Database } from 'sqlite';
 import { EventEmitter } from 'events';
 import { isJsonObject } from 'tiny-essentials';
 
+import { validatePostgresParams } from './Utils.mjs';
 import { pg, sqlite3 } from './Modules.mjs';
 import PuddySqlEngine from './PuddySqlEngine.mjs';
 import PuddySqlQuery from './PuddySqlQuery.mjs';
@@ -420,8 +421,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * @throws {Error} If the table has already been initialized.
    */
   async initTable(settings = {}, tableData = []) {
-    if (!isJsonObject(settings))
-      throw new Error('settings must be a plain object');
+    if (!isJsonObject(settings)) throw new Error('settings must be a plain object');
     if (typeof settings.name !== 'string') throw new Error('settings.name must be a string');
     if (!this.#tables[settings.name]) {
       const newTable = new PuddySqlQuery();
@@ -591,10 +591,9 @@ class PuddySqlInstance extends PuddySqlEngine {
        * @returns {void}
        */
       const rejectConnection = (reject, err) => {
-        if (isConnectionError(err)) event.emit('connection-error', err);
+        if (isConnectionError(err)) this.#events.emit('connection-error', err);
         reject(err);
       };
-      const event = this.#events;
       const getId = () => this.#debugCount++;
       const isDebug = () => this.#debug;
 
@@ -644,6 +643,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        */
       this.all = async function (query, params = [], debugName = '') {
         return new Promise((resolve, reject) => {
+          validatePostgresParams(query, params, reject);
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
           db.all(query, params)
@@ -664,6 +664,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        */
       this.get = async function (query, params = [], debugName = '') {
         return new Promise((resolve, reject) => {
+          validatePostgresParams(query, params, reject);
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
           db.get(query, params)
@@ -684,6 +685,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        */
       this.run = async function (query, params, debugName = '') {
         return new Promise((resolve, reject) => {
+          validatePostgresParams(query, params, reject);
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
           db.run(query, params)
@@ -756,9 +758,8 @@ class PuddySqlInstance extends PuddySqlEngine {
        * @returns {void}
        */
       const rejectConnection = (err) => {
-        if (isConnectionError(err)) event.emit('connection-error', err);
+        if (isConnectionError(err)) this.#events.emit('connection-error', err);
       };
-      const event = this.#events;
       db.on('error', rejectConnection);
 
       const getId = () => this.#debugCount++;
@@ -810,6 +811,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        */
       this.all = async function (query, params = [], debugName = '') {
         try {
+          validatePostgresParams(query, params);
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
           const res = await db.query(query, params);
@@ -830,6 +832,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        */
       this.get = async function (query, params = [], debugName = '') {
         try {
+          validatePostgresParams(query, params);
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
           const res = await db.query(query, params);
@@ -852,6 +855,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        */
       this.run = async function (query, params, debugName = '') {
         try {
+          validatePostgresParams(query, params);
           const id = getId();
           sendSqlDebug(id, debugName, query, params);
           const res = await db.query(query, params);

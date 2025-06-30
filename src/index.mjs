@@ -1,4 +1,5 @@
 import { pg, sqlite3 } from './Modules.mjs';
+import * as Utils from './Utils.mjs';
 import PuddySqlEvents from './PuddySqlEvents.mjs';
 import PuddySqlInstance from './PuddySqlInstance.mjs';
 import PuddySqlQuery from './PuddySqlQuery.mjs';
@@ -9,6 +10,7 @@ class PuddySql {
   static Query = PuddySqlQuery;
   static Tags = PuddySqlTags;
   static Events = PuddySqlEvents;
+  static Utils = Utils;
   static pg = pg;
   static sqlite3 = sqlite3;
 

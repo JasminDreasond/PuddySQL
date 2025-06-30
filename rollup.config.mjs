@@ -1,5 +1,6 @@
 import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
+import json from '@rollup/plugin-json';
 import preserveDirectories from 'rollup-preserve-directives';
 const pkg = JSON.parse(fs.readFileSync('./package.json'))
 
@@ -23,6 +24,7 @@ const inputFiles = getAllInputFiles();
 // Prepare Plugins
 const plugins = [
   resolve({ preferBuiltins: true }),
+  json(),
   commonjs(),
   preserveDirectories(),
 ];
