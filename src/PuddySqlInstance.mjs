@@ -420,7 +420,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * @throws {Error} If the table has already been initialized.
    */
   async initTable(settings = {}, tableData = []) {
-    if (typeof settings !== 'object' || settings === null || Array.isArray(settings))
+    if (!isJsonObject(settings))
       throw new Error('settings must be a plain object');
     if (typeof settings.name !== 'string') throw new Error('settings.name must be a string');
     if (!this.#tables[settings.name]) {
@@ -705,7 +705,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * It also attaches a `SIGINT` listener to gracefully close the database connection
    * when the process is terminated.
    *
-   * @param {Object} config - PostgreSQL client configuration object.
+   * @param {import('pg').PoolConfig} config - PostgreSQL client configuration object.
    *                          Must be compatible with the `pg` Pool constructor.
    * @throws {Error} If a SQL engine is already initialized for this instance.
    */
