@@ -1,3 +1,4 @@
+import _ from 'lodash';
 import { isJsonObject } from 'tiny-essentials';
 
 /** @typedef {{ title: string; parser?: function(string): string }} SpecialQuery */
@@ -29,6 +30,18 @@ import { isJsonObject } from 'tiny-essentials';
  */
 
 /**
+ * Represents a mapping entry for a tag input definition.
+ *
+ * Each tag input is defined by the name of the list where it belongs (`list`)
+ * and the key (`valueKey`) used to extract the relevant value from tag objects.
+ * This structure is used to determine how tags are parsed and grouped during search.
+ *
+ * @typedef {Object} TagInput
+ * @property {string} list - The list name where the tag will be added.
+ * @property {string} valueKey - The key for the value associated with the tag input.
+ */
+
+/**
  * @class PuddySqlTags
  * @description A powerful utility class for building advanced SQL WHERE clauses with support for tag-based filtering,
  * custom boolean logic, wildcard parsing, and special query handlers.
@@ -56,20 +69,20 @@ class PuddySqlTags {
    *
    * @type {string|null}
    */
-  jsonEach = 'json_array_elements_text';
+  #jsonEach = 'json_array_elements_text';
 
   /** @type {SpecialQuery[]} */
-  specialQueries = [];
+  #specialQueries = [];
 
-  defaultColumn = '';
-  wildcardA = '*';
-  wildcardB = '?';
-  noRepeat = false;
-  useJsonEach = true;
-  parseLimit = -1;
+  #defaultColumn = '';
+  #wildcardA = '*';
+  #wildcardB = '?';
+  #noRepeat = false;
+  #useJsonEach = true;
+  #parseLimit = -1;
 
   /** @type {string|null} */
-  defaultValueName = null;
+  #defaultValueName = null;
 
   /**
    * Creates an instance of the PuddySqlTags class.
@@ -90,7 +103,7 @@ class PuddySqlTags {
    * These mappings enable flexible handling of tags, where the symbols (`^`, `~`, etc.) can be used
    * to categorize tags dynamically and assign values to them based on their symbol.
    *
-   * @type {Object<string, { list: string, valueKey: string }>}
+   * @type {Object<string, TagInput>}
    * @example
    * // Example usage:
    * const symbolMapping = this.#tagInputs['^'];
@@ -135,38 +148,70 @@ class PuddySqlTags {
   }
 
   /**
-   * Removes a tag input mapping from the #tagInputs property.
+   * Checks if a tag input mapping exists for the given key.
    *
-   * This method removes the tag input associated with the specified `key`.
-   * It checks if the key exists in the `#tagInputs` object, and if so,
-   * deletes the corresponding entry and returns `true`. If the key does not
-   * exist, it returns `false`.
-   *
-   * @param {string} key - The key of the tag input to be removed.
-   * @returns {boolean} Returns true if the tag input was successfully removed,
-   * false if the key was not found.
+   * @param {string} key - The tag key to check.
+   * @returns {boolean} `true` if the key exists in `#tagInputs`, otherwise `false`.
+   * @throws {TypeError} If `key` is not a string.
    */
-  removeTagInput(key) {
-    // Check if the key exists in the #tagInputs object
-    if (this.#tagInputs.hasOwnProperty(key)) {
-      // Delete the tag input if it exists
-      delete this.#tagInputs[key];
-      return true;
-    }
-    // Return false if the key was not found
+  hasTagInput(key) {
+    if (typeof key !== 'string') throw new TypeError('key must be a string');
+    if (this.#tagInputs.hasOwnProperty(key)) return true;
     return false;
   }
 
   /**
+   * Removes a tag input mapping from the `#tagInputs` object.
+   *
+   * If the key exists, it will be deleted.
+   * Otherwise, an error is thrown.
+   *
+   * @param {string} key - The key of the tag input to remove.
+   * @throws {Error} If the specified key does not exist in `#tagInputs`.
+   * @throws {TypeError} If `key` is not a string.
+   */
+  removeTagInput(key) {
+    // Check if the key exists in the #tagInputs object
+    if (this.hasTagInput(key)) {
+      // Delete the tag input if it exists
+      delete this.#tagInputs[key];
+    }
+    throw new Error(`Tag input key '${key}' does not exist.`);
+  }
+
+  /**
+   * Gets the title of the first item for a given tag input key.
+   *
+   * @param {string} key - The key of the tag input to retrieve.
+   * @returns {TagInput} The title of the first item.
+   * @throws {TypeError} If `key` is not a string.
+   * @throws {Error} If the key does not exist or has no valid title.
+   */
+  getTagInput(key) {
+    if (typeof key !== 'string') throw new TypeError('Tag input key must be a string');
+    if (!this.#tagInputs[key]) throw new Error(`Tag input '${key}' is missing.`);
+    return { ...this.#tagInputs[key] };
+  }
+
+  /**
+   * Gets an array of all tag input titles.
+   *
+   * @returns {TagInput[]} An array containing the tag inputs.
+   */
+  getAllTagInput() {
+    return Object.entries(this.#tagInputs).map(([key, entry]) => ({ ...entry }));
+  }
+
+  /**
    * Sets whether repeated tags are allowed.
-   * Internally sets `this.noRepeat` to the inverse of the boolean value provided.
+   * Internally sets `this.#noRepeat` to the inverse of the boolean value provided.
    * If value is not a boolean, resets `noRepeat` to null.
    *
    * @param {boolean} value - True to allow repeated tags, false to prevent them.
    */
   setCanRepeat(value) {
     if (typeof value !== 'boolean') throw new Error('value must be a boolean');
-    this.noRepeat = !value;
+    this.#noRepeat = !value;
   }
 
   /**
@@ -180,8 +225,8 @@ class PuddySqlTags {
     if (where !== 'wildcardA' && where !== 'wildcardB')
       throw new Error("where must be 'wildcardA' or 'wildcardB'");
     if (typeof value !== 'string') throw new Error('value must be a string');
-    if (where === 'wildcardA') this.wildcardA = value;
-    if (where === 'wildcardB') this.wildcardB = value;
+    if (where === 'wildcardA') this.#wildcardA = value;
+    if (where === 'wildcardB') this.#wildcardB = value;
   }
 
   /**
@@ -194,19 +239,70 @@ class PuddySqlTags {
   addSpecialQuery(config) {
     if (!isJsonObject(config) || typeof config.title !== 'string')
       throw new Error('config must be an object with a string "title"');
-    this.specialQueries.push(config);
+    this.#specialQueries.push(config);
   }
 
   /**
-   * Removes a special query by its title.
-   * If the query is found in the internal array, it is removed.
+   * Checks if a special query with the given title exists.
    *
-   * @param {string} title - The title of the special query to be removed.
+   * @param {string} title - The title of the special query to check.
+   * @returns {boolean} `true` if a special query with the title exists, otherwise `false`.
+   * @throws {TypeError} If `title` is not a string.
+   */
+  hasSpecialQuery(title) {
+    if (typeof title !== 'string') throw new TypeError('title must be a string');
+    if (this.#specialQueries.findIndex((item) => item.title === title)) return true;
+    return false;
+  }
+
+  /**
+   * Removes a special query identified by its title.
+   *
+   * If a query with the specified title exists, it is removed.
+   * Otherwise, an error is thrown.
+   *
+   * @param {string} title - The title of the special query to remove.
+   * @throws {TypeError} If `title` is not a string.
+   * @throws {Error} If no special query with the given title exists.
    */
   removeSpecialQuery(title) {
-    if (typeof title !== 'string') throw new Error('title must be a string');
-    const index = this.specialQueries.findIndex((item) => item.title === title);
-    if (index > -1) this.specialQueries.splice(index, 1);
+    if (typeof title !== 'string') throw new TypeError('title must be a string');
+    const index = this.#specialQueries.findIndex((item) => item.title === title);
+    if (index > -1) {
+      this.#specialQueries.splice(index, 1);
+      return;
+    }
+    throw new Error(`Special query with title '${title}' does not exist.`);
+  }
+
+  /**
+   * Retrieves the title of a special query by its title key.
+   *
+   * This method checks if a special query with the given title exists
+   * and returns its `parser` value. If not found, it throws an error.
+   *
+   * @param {string} title - The title of the special query to retrieve.
+   * @returns {(function(string): string) | null} The function of the found special query.
+   * @throws {TypeError} If `title` is not a string.
+   * @throws {Error} If no special query with the given title exists.
+   */
+  getSpecialQuery(title) {
+    if (typeof title !== 'string') throw new TypeError('title must be a string');
+    const item = this.#specialQueries.find((entry) => entry.title === title);
+    if (!item) throw new Error(`No special query found with title '${title}'`);
+    return item.parser || null;
+  }
+
+  /**
+   * Returns a list of all special query titles.
+   *
+   * This is a shallow extraction of the `title` field from every item
+   * in the internal `#specialQueries` array.
+   *
+   * @returns {string[]} An array of all special query titles.
+   */
+  getAllSpecialQuery() {
+    return this.#specialQueries.map((item) => item.title);
   }
 
   /**
@@ -216,7 +312,7 @@ class PuddySqlTags {
    */
   setColumnName(value) {
     if (typeof value !== 'string') throw new Error('value must be a string');
-    this.defaultColumn = value;
+    this.#defaultColumn = value;
   }
 
   /**
@@ -225,7 +321,7 @@ class PuddySqlTags {
    * @returns {string} The name of the default column.
    */
   getColumnName() {
-    return this.defaultColumn;
+    return this.#defaultColumn;
   }
 
   /**
@@ -236,7 +332,7 @@ class PuddySqlTags {
    */
   setParseLimit(value) {
     if (typeof value !== 'number') throw new Error('value must be a number');
-    this.parseLimit = value;
+    this.#parseLimit = value;
   }
 
   /**
@@ -245,7 +341,7 @@ class PuddySqlTags {
    * @returns {number} The current parse limit.
    */
   getParseLimit() {
-    return this.parseLimit;
+    return this.#parseLimit;
   }
 
   /**
@@ -256,7 +352,7 @@ class PuddySqlTags {
    */
   setUseJsonEach(value) {
     if (typeof value !== 'boolean') throw new Error('value must be a boolean');
-    this.useJsonEach = value;
+    this.#useJsonEach = value;
   }
 
   /**
@@ -266,7 +362,7 @@ class PuddySqlTags {
    */
   setValueName(value) {
     if (typeof value !== 'string') throw new Error('value must be a string');
-    this.defaultValueName = value;
+    this.#defaultValueName = value;
   }
 
   /**
@@ -277,7 +373,7 @@ class PuddySqlTags {
    */
   setJsonEach(value) {
     if (value !== null && typeof value !== 'string') throw new Error('value must be a string');
-    this.jsonEach = value;
+    this.#jsonEach = value;
   }
 
   /**
@@ -296,15 +392,29 @@ class PuddySqlTags {
    * @returns {string} The generated SQL condition string (e.g., `(EXISTS (...)) AND (NOT EXISTS (...))`).
    */
   parseWhere(group = {}, pCache = { index: 1, values: [] }) {
-    if (!isJsonObject(pCache) || !isJsonObject(group)) return '';
-    if (typeof pCache.index !== 'number') pCache.index = 1;
-    if (!Array.isArray(pCache.values)) pCache.values = [];
+    if (!isJsonObject(pCache))
+      throw new TypeError(`Expected pCache to be a valid object, but got ${typeof pCache}`);
+    if (!isJsonObject(group))
+      throw new TypeError(`Expected group to be a valid object, but got ${typeof group}`);
+    if (typeof pCache.index !== 'number')
+      throw new TypeError(
+        `Invalid or missing pCache.index; expected number but got ${typeof pCache.index}`,
+      );
+    if (!Array.isArray(pCache.values))
+      throw new TypeError(
+        `Invalid or missing pCache.values; expected array but got ${typeof pCache.values}`,
+      );
 
     const where = [];
     const tagsColumn = group.column || this.getColumnName();
-    const tagsValue = group.valueName || this.defaultValueName;
+    const tagsValue = group.valueName || this.#defaultValueName;
     const allowWildcards = typeof group.allowWildcards === 'boolean' ? group.allowWildcards : false;
-    const include = group.include || [];
+
+    if (!Array.isArray(group.include))
+      throw new TypeError(
+        `Expected 'include' to be an array of tags or tag groups, but got ${typeof group.include}`,
+      );
+    const include = group.include;
 
     /**
      * @param {string} funcName
@@ -314,8 +424,8 @@ class PuddySqlTags {
      */
     const createQuery = (funcName, param, useLike = false) =>
       `${funcName} (SELECT 1 FROM ${
-        this.useJsonEach
-          ? `${this.jsonEach}(${tagsColumn}) WHERE value ${useLike ? 'LIKE' : '='} ${param}`
+        this.#useJsonEach
+          ? `${this.#jsonEach}(${tagsColumn}) WHERE value ${useLike ? 'LIKE' : '='} ${param}`
           : `${tagsColumn} WHERE ${tagsColumn}.${tagsValue} ${useLike ? 'LIKE' : '='} ${param}`
       })`;
 
@@ -324,18 +434,24 @@ class PuddySqlTags {
      * @returns {{ param: string; usesWildcard: boolean; not: boolean; }}
      */
     const filterTag = (tag) => {
+      if (typeof tag !== 'string')
+        throw new TypeError(`Each tag must be a string, but received: ${typeof tag}`);
+
       const not = tag.startsWith('!');
       const cleanTag = not ? tag.slice(1) : tag;
+      // if (!cleanTag) throw new SyntaxError('Empty tag name after negation (!tag)');
+
       if (typeof pCache.index !== 'number') throw new Error('Invalid pCache index');
       const param = `$${pCache.index++}`;
 
       const usesWildcard =
-        allowWildcards && (cleanTag.includes(this.wildcardA) || cleanTag.includes(this.wildcardB));
+        allowWildcards &&
+        (cleanTag.includes(this.#wildcardA) || cleanTag.includes(this.#wildcardB));
       const filteredTag = usesWildcard
         ? cleanTag
             .replace(/([%_])/g, '\\$1')
-            .replaceAll(this.wildcardA, '%')
-            .replaceAll(this.wildcardB, '_')
+            .replaceAll(this.#wildcardA, '%')
+            .replaceAll(this.#wildcardB, '_')
         : cleanTag;
 
       if (!Array.isArray(pCache.values)) throw new Error('Invalid pCache values');
@@ -345,6 +461,7 @@ class PuddySqlTags {
 
     for (const clause of include) {
       if (Array.isArray(clause)) {
+        // if (!clause.length) throw new SyntaxError('Empty OR group inside "include" array');
         const ors = clause.map((tag) => {
           const { param, usesWildcard, not } = filterTag(tag);
           return createQuery(`${not ? 'NOT ' : ''}EXISTS`, param, usesWildcard);
@@ -367,7 +484,7 @@ class PuddySqlTags {
    * or special keywords) and extracts custom input values and predefined special queries.
    *
    * It uses the configured `#tagInputs` to detect symbol-based values (e.g. score+3, weight*2),
-   * and `specialQueries` to detect and parse keys like `source:ponybooru`.
+   * and `#specialQueries` to detect and parse keys like `source:ponybooru`.
    *
    * It also updates the input chunks to remove already-processed terms and eliminate repetitions
    * when `noRepeat` mode is enabled.
@@ -420,7 +537,7 @@ class PuddySqlTags {
             }
 
             // Checking if the term has already been added in the unique tag set
-            if (!this.noRepeat || Array.isArray(group) || !uniqueTags.has(termValue.trim())) {
+            if (!this.#noRepeat || Array.isArray(group) || !uniqueTags.has(termValue.trim())) {
               remainingTerms.push(termValue.trim());
               if (!Array.isArray(group)) uniqueTags.add(termValue.trim());
             }
@@ -436,7 +553,7 @@ class PuddySqlTags {
         if (term.includes(':')) {
           const [key, ...rest] = term.split(':');
           const value = rest.join(':');
-          const found = this.specialQueries.find((q) => q.title === key);
+          const found = this.#specialQueries.find((q) => q.title === key);
 
           if (found && value !== undefined) {
             let parsedValue = value;
@@ -447,7 +564,7 @@ class PuddySqlTags {
           }
         } else {
           // If it is not a special term, it usually treats or allows repetition within groups
-          if (!this.noRepeat || Array.isArray(group) || !uniqueTags.has(term)) {
+          if (!this.#noRepeat || Array.isArray(group) || !uniqueTags.has(term)) {
             remainingTerms.push(term);
             if (!Array.isArray(group)) uniqueTags.add(term);
           }
@@ -482,12 +599,18 @@ class PuddySqlTags {
    * This parser supports expressions like:
    *   `applejack^2, "rainbow dash", (solo OR duo), pudding AND source:ponybooru`
    *
-   * @param {string} input - The user input string to parse.
+   * @param {string} input - The raw input string provided by the user.
+   * @param {boolean} [strictMode=false] - Enables strict validation checks.
+   * @param {Object} [strictConfig={}] - Optional validation rules for strict mode:
+   *   @param {boolean} [strictConfig.emptyInput=true] - Throw if input is empty after trimming.
+   *   @param {boolean} [strictConfig.parseLimit=true] - Enforce the parse limit (`this.parseLimit`).
+   *   @param {boolean} [strictConfig.openParens=true] - Require balanced parentheses.
+   *   @param {boolean} [strictConfig.quoteChar=true] - Require closing quotes if one is opened.
    *
    * @returns {ParseStringResult} An object containing:
    *   - `column`: The column name from `this.getColumnName()`.
    *   - `include`: Array of tags and OR-groups to include in the query.
-   *   - Additional properties (e.g., `boosts`, `specials`) depending on matches in `#tagInputs` or `specialQueries`.
+   *   - Additional properties (e.g., `boosts`, `specials`) depending on matches in `#tagInputs` or `#specialQueries`.
    *
    * Example return:
    * ```js
@@ -499,7 +622,23 @@ class PuddySqlTags {
    * }
    * ```
    */
-  parseString(input) {
+  parseString(input, strictMode = false, strictConfig = {}) {
+    if (typeof input !== 'string') {
+      throw new TypeError(`Expected input to be a string, but received ${typeof input}`);
+    }
+
+    const strictCfg = _.defaults(strictConfig, {
+      emptyInput: true,
+      parseLimit: true,
+      openParens: true,
+      quoteChar: true,
+    });
+
+    input = input.replace(/\s+/g, ' ').trim();
+    if (strictMode && strictCfg.emptyInput && !input.length) {
+      throw new Error('Input string is empty after trimming');
+    }
+
     /** @type {Chunks} */
     const chunks = [];
 
@@ -511,16 +650,20 @@ class PuddySqlTags {
     let quoteChar = '';
     const uniqueTags = new Set(); // Para garantir que não existam tags duplicadas
     let inGroup = false;
+    let openParens = 0;
+    let tagCount = 0;
 
     const flushBuffer = () => {
       const value = buffer.trim();
       if (!value) return;
-      if (this.parseLimit < 0 || tagCount < this.parseLimit) {
-        if (!this.noRepeat || inGroup || !uniqueTags.has(value)) {
+      if (this.#parseLimit < 0 || tagCount < this.#parseLimit) {
+        if (!this.#noRepeat || inGroup || !uniqueTags.has(value)) {
           currentGroup.push(value);
           if (!inGroup) uniqueTags.add(value);
           tagCount++;
         }
+      } else if (strictMode && strictCfg.parseLimit) {
+        throw new Error(`Exceeded tag parse limit of ${this.#parseLimit}`);
       }
       buffer = '';
     };
@@ -533,9 +676,6 @@ class PuddySqlTags {
       }
       currentGroup = [];
     };
-
-    input = input.replace(/\s+/g, ' ').trim();
-    let tagCount = 0;
 
     for (let i = 0; i < input.length; i++) {
       const c = input[i];
@@ -559,6 +699,7 @@ class PuddySqlTags {
       }
 
       if (c === '(') {
+        openParens++;
         flushBuffer();
         currentGroup = [];
         inGroup = true;
@@ -566,6 +707,10 @@ class PuddySqlTags {
       }
 
       if (c === ')') {
+        if (strictMode && strictCfg.openParens && openParens <= 0) {
+          throw new SyntaxError(`Unexpected closing parenthesis at position ${i}`);
+        }
+        openParens--;
         flushBuffer();
         flushGroup();
         inGroup = false;
@@ -588,6 +733,13 @@ class PuddySqlTags {
       buffer += c;
     }
 
+    if (strictMode) {
+      if (strictCfg.quoteChar && inQuotes)
+        throw new SyntaxError(`Unclosed quote starting with ${quoteChar}`);
+      if (strictCfg.openParens && openParens > 0)
+        throw new SyntaxError(`Unclosed parenthesis — ${openParens} more ')' expected`);
+    }
+
     flushBuffer();
     flushGroup();
 
@@ -607,7 +759,13 @@ class PuddySqlTags {
    * user-friendly interfaces where symbols are more commonly used than
    * structured boolean expressions.
    *
-   * @param {string} input - The raw user input string.
+   * @param {string} input - The raw input string provided by the user.
+   * @param {boolean} [strictMode=false] - Enables strict validation checks.
+   * @param {Object} [strictConfig={}] - Optional validation rules for strict mode:
+   *   @param {boolean} [strictConfig.emptyInput=true] - Throw if input is empty after trimming.
+   *   @param {boolean} [strictConfig.parseLimit=true] - Enforce the parse limit (`this.parseLimit`).
+   *   @param {boolean} [strictConfig.openParens=true] - Require balanced parentheses.
+   *   @param {boolean} [strictConfig.quoteChar=true] - Require closing quotes if one is opened.
    *
    * @returns {ParseStringResult} A structured result object returned by `parseString()`,
    *   containing keys like `column`, `include`, `specials`, `boosts`, etc., depending on
@@ -617,7 +775,7 @@ class PuddySqlTags {
    * safeParseString("applejack, -source, rarity || twilight")
    * // → equivalent to: parseString("applejack AND !source AND rarity OR twilight")
    */
-  safeParseString(input) {
+  safeParseString(input, strictMode = false, strictConfig = {}) {
     return this.parseString(
       input
         .split(',')
@@ -626,6 +784,8 @@ class PuddySqlTags {
         .replace(/\-|\s?NOT$/g, '!')
         .replace(/\&\&/g, 'AND')
         .replace(/\|\|/g, 'OR'),
+      strictMode,
+      strictConfig,
     );
   }
 }

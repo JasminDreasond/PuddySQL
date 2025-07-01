@@ -9,7 +9,8 @@
         "emitDeclarationOnly": false,
         "target": "ESNext",
         "strict": true,
-        "moduleResolution": "node"
+        "moduleResolution": "node",
+        "allowSyntheticDefaultImports": true,
     },
     "include": ["src"],
     "exclude": ["node_modules"]
