@@ -552,11 +552,6 @@ class PuddySqlInstance extends PuddySqlEngine {
 
       // Set SQL methods (all, get, run)
       this.setSqlite3(this.#db);
-
-      // Graceful shutdown on process termination
-      process.on('SIGINT', async () => {
-        await this.destroy();
-      });
     } else throw new Error('SQL has already been initialized in this instance!');
   }
 
@@ -718,11 +713,6 @@ class PuddySqlInstance extends PuddySqlEngine {
 
       // Set up the SQL methods (all, get, run)
       this.setPostgre(this.#db);
-
-      // Attach handler to close DB on process termination
-      process.on('SIGINT', async () => {
-        await this.destroy();
-      });
 
       // Connect to the PostgreSQL database
       await this.#db.connect();
