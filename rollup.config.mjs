@@ -2,7 +2,7 @@ import resolve from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import json from '@rollup/plugin-json';
 import preserveDirectories from 'rollup-preserve-directives';
-const pkg = JSON.parse(fs.readFileSync('./package.json'))
+const pkg = JSON.parse(fs.readFileSync('./package.json'));
 
 import fs from 'fs';
 import path from 'path';
@@ -22,12 +22,7 @@ function getAllInputFiles(dir = 'src') {
 const inputFiles = getAllInputFiles();
 
 // Prepare Plugins
-const plugins = [
-  resolve({ preferBuiltins: true }),
-  json(),
-  commonjs(),
-  preserveDirectories(),
-];
+const plugins = [resolve({ preferBuiltins: true }), json(), commonjs(), preserveDirectories()];
 
 export default [
   // CJS
@@ -40,8 +35,8 @@ export default [
       sourcemap: false,
       preserveModules: true,
       preserveModulesRoot: 'src',
-      entryFileNames: '[name].cjs'
+      entryFileNames: '[name].cjs',
     },
     plugins,
-  }
+  },
 ];
