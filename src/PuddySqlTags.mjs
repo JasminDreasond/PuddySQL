@@ -781,7 +781,8 @@ class PuddySqlTags {
         .split(',')
         .map((item) => item.trim())
         .join(' AND ')
-        .replace(/\-|\s?NOT$/g, '!')
+        .replace(/(?:^|[\s(,])-(?=\w)/g, (match) => match.replace('-', '!'))
+        .replace(/\bNOT\b/g, '!')
         .replace(/\&\&/g, 'AND')
         .replace(/\|\|/g, 'OR'),
       strictMode,
