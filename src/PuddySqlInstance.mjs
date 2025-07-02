@@ -6,6 +6,7 @@ import { validatePostgresParams } from './Utils.mjs';
 import { pg, sqlite3 } from './Modules.mjs';
 import PuddySqlEngine from './PuddySqlEngine.mjs';
 import PuddySqlQuery from './PuddySqlQuery.mjs';
+import PuddySqlEvents from './PuddySqlEvents.mjs';
 
 /** @typedef {import('pg').Pool} PgPool */
 /** @typedef {import('sqlite').Database} SqliteDb */
@@ -43,6 +44,16 @@ class PuddySqlInstance extends PuddySqlEngine {
    */
   #sysEvents = new EventEmitter();
   #sysEventsUsed = false;
+
+  /**
+   * Emits an event with optional arguments to all system emit.
+   * @param {string | symbol} event - The name of the event to emit.
+   * @param {...any} args - Arguments passed to event listeners.
+   */
+  #emit(event, ...args) {
+    this.#events.emit(event, ...args);
+    if (this.#sysEventsUsed) this.#sysEvents.emit(event, ...args);
+  }
 
   /**
    * Provides access to a secure internal EventEmitter for subclass use only.
@@ -586,7 +597,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        * @returns {void}
        */
       const rejectConnection = (reject, err) => {
-        if (isConnectionError(err)) this.#events.emit('connection-error', err);
+        if (isConnectionError(err)) this.#emit(PuddySqlEvents.ConnectionError, err);
         reject(err);
       };
       const getId = () => this.#debugCount++;
@@ -748,7 +759,7 @@ class PuddySqlInstance extends PuddySqlEngine {
        * @returns {void}
        */
       const rejectConnection = (err) => {
-        if (isConnectionError(err)) this.#events.emit('connection-error', err);
+        if (isConnectionError(err)) this.#emit(PuddySqlEvents.ConnectionError, err);
       };
       db.on('error', rejectConnection);
 

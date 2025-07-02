@@ -16,7 +16,15 @@ class PuddySqlEvents {
     );
   }
 
-  static Test = 'Test';
+  /**
+   * Constant identifier used to represent a connection failure.
+   *
+   * This can be thrown, logged, or compared when the database connection is not available.
+   *
+   * @type {string}
+   * @static
+   */
+  static ConnectionError = 'Connection-Error';
 
   /**
    * @returns {string[]}
