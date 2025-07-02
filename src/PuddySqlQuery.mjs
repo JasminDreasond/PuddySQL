@@ -42,7 +42,7 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  * Represents the result of a paginated query.
  *
  * @typedef {Object} PaginationResult
- * @property {unknown[]} items - Array of items returned for the current page.
+ * @property {any[]} items - Array of items returned for the current page.
  * @property {number} totalPages - Total number of available pages based on the query and per-page limit.
  * @property {number} totalItems - Total number of items matching the query without pagination.
  */
@@ -76,7 +76,7 @@ import PuddySqlTags from './PuddySqlTags.mjs';
 /**
  * Represents a free-form object with unknown values and arbitrary keys.
  *
- * @typedef {Record<string | number | symbol, unknown>} FreeObj
+ * @typedef {Record<string | number | symbol, any>} FreeObj
  *
  * An object type where keys can be strings, numbers, or symbols, and values can be any unknown type.
  * Useful for generic data containers where the structure is not strictly defined.
