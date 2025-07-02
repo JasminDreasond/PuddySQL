@@ -87,6 +87,17 @@ class PuddySqlEngine {
   }
 
   /**
+   * Throws an error because no SQL engine was selected.
+   * @param {string} method - Method name that was called.
+   * @returns {never}
+   */
+  #missingEngineError(method) {
+    throw new Error(
+      `[PuddySql] You must choose a SQL engine (sqlite3 or pg) before using the '${method}' method.`,
+    );
+  }
+
+  /**
    * Executes a query to get all rows from a database table.
    * @function
    * @async
@@ -96,7 +107,8 @@ class PuddySqlEngine {
    * @returns {Promise<any[*]>} A promise that resolves to an array of rows.
    * @throws {Error} Throws an error if the query fails.
    */
-  all = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
+  all = (query, params, debugName = '') =>
+    new Promise((resolve, reject) => reject(this.#missingEngineError('all')));
 
   /**
    * Executes a query to get a single row from a database table.
@@ -108,7 +120,8 @@ class PuddySqlEngine {
    * @returns {Promise<Record<any, any>|null>} A promise that resolves to a single row object.
    * @throws {Error} Throws an error if the query fails.
    */
-  get = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
+  get = (query, params, debugName = '') =>
+    new Promise((resolve, reject) => reject(this.#missingEngineError('get')));
 
   /**
    * Executes an SQL statement to modify the database (e.g., INSERT, UPDATE).
@@ -120,7 +133,8 @@ class PuddySqlEngine {
    * @returns {Promise<Record<any, any>|null>} A promise that resolves to the result of the query execution.
    * @throws {Error} Throws an error if the query fails.
    */
-  run = (query, params, debugName = '') => new Promise((resolve) => resolve(null));
+  run = (query, params, debugName = '') =>
+    new Promise((resolve, reject) => reject(this.#missingEngineError('run')));
 }
 
 export default PuddySqlEngine;

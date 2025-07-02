@@ -67,6 +67,73 @@ To learn more about each module (`Engine`, `Instance`, `Query`, `Tags`) and how 
 
 ---
 
+## 🚀 Quick Example
+
+Here’s how to get started using **PuddySQL**:
+
+```js
+import path from 'path';
+import { fileURLToPath } from 'url';
+import PuddySql from 'puddysql';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 🎮 Create a new SQL instance
+const db = new PuddySql.Instance();
+
+// 📡 Run queries
+(async () => {
+  await db.initSqlite3();
+
+  // Insert a new user
+  const table = await db.initTable({ name: 'tinytest', id: 'id' }, [
+      ['id', 'TEXT', 'PRIMARY KEY'],
+      ['prompt', 'TEXT'],
+      ['yay', 'BOOLEAN']
+  ]);
+
+  console.log('Set');
+  console.log(await table.set('1', { prompt: 'pudding', yay: true }));
+  console.log(await table.set('2', { prompt: 'cookie', yay: true }));
+  console.log(await table.set('3', { prompt: 'brigadeiro', yay: true }));
+  console.log(await table.set('4', { prompt: 'banana', yay: false }));
+  console.log(await table.set('5', { prompt: 'chocolate', yay: true }));
+
+  console.log('Get All');
+  console.log(await table.getAll());
+
+  // Find a user by ID
+  console.log('Get');
+  const user = await table.get(1);
+  console.log(user); // → { id: 1, prompt: 'pudding', yay: true }
+
+  // Get a paginated list
+  console.log('Search');
+  const data1 = await db.getTable('tinytest').search({
+      q: {
+        group: 'AND',
+        conditions: [{ column: 'prompt', value: 'pudding' }],
+      },
+    });
+
+  const data2 = await table.search({
+      q: {
+          group: 'OR',
+          conditions: [
+            { column: 'prompt', value: 'pudding' },
+            { column: 'yay', value: false },
+          ],
+      },
+    });
+
+  console.log(data1); 
+  console.log(data2); 
+})();
+```
+
+---
+
 ## 🤝 Contributions
 
 Feel free to fork, contribute, and create pull requests for improvements! Whether it's a bug fix or an additional feature, contributions are always welcome.
