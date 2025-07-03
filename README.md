@@ -40,7 +40,7 @@ npm install puddysql
 
 ## 📚 Documentation
 
-To learn more about each module (`Engine`, `Instance`, `Query`, `Tags`) and how they work together:
+For API reference, check each module’s own documentation:
 
 👉 **See:** [`docs/README.md`](./docs/README.md)
 
@@ -64,6 +64,25 @@ To learn more about each module (`Engine`, `Instance`, `Query`, `Tags`) and how 
 
   * ✅ SQLite3
   * ✅ PostgreSQL (via `pg` adapter)
+
+---
+
+## 🧭 Modules Menu
+
+The `PuddySql` class is the main access point to all core features of the library.
+You should not instantiate it directly — instead, use `PuddySql.Instance`.
+
+Here's a quick overview of what's available:
+
+| 📦 Static Property  | 🔍 Description                                                              |
+| ------------------- | --------------------------------------------------------------------------- |
+| `PuddySql.Instance` | 🎮 Main SQL client class for managing databases (PostgreSQL or SQLite3)     |
+| `PuddySql.Query`    | 🧠 Query builder and smart search engine with advanced filtering            |
+| `PuddySql.Tags`     | 🏷️ Flexible tag system parser (with support for JSON arrays, boosts, etc.)  |
+| `PuddySql.Events`   | 🎯 Event manager to attach lifecycle hooks to query logic                   |
+| `PuddySql.Utils`    | 🛠️ Useful utilities (object flattening, merge helpers, SQL formatters)      |
+| `PuddySql.pg`       | 🐘 PostgreSQL database engine (pg wrapper)                                  |
+| `PuddySql.sqlite3`  | 📀 SQLite3 engine for local/in-memory usage (sqlite3 wrapper)               |
 
 ---
 
