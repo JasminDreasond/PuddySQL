@@ -190,7 +190,7 @@ Sets the alias used in `EXISTS` subqueries (commonly `'value'`).
 Sets the SQL expression used for `json_each()` parsing, such as:
 
 ```sql
-json_array_elements_text(tags)
+json_each(tags)
 ```
 
 ---

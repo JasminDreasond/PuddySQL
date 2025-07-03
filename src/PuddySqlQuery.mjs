@@ -142,9 +142,9 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  *
  * @typedef {Object} BoostValue
  * @property {string[]} [columns] - List of columns to apply the boost on.
- * @property {string} operator - Operator used in the condition (e.g., '=', 'LIKE').
- * @property {string|string[]} value - Value to match in the condition.
- * @property {number} weight - Weight factor to boost results matching the condition.
+ * @property {string} [operator='LIKE'] - Operator used in the condition (e.g., '=', 'LIKE').
+ * @property {string|string[]} [value] - Value to match in the condition.
+ * @property {number} [weight=1] - Weight factor to boost results matching the condition.
  */
 
 /**
@@ -619,6 +619,7 @@ class PuddySqlQuery {
 
       // Boost
       for (const boost of boostArray) {
+        // Validator
         const { columns, operator = 'LIKE', value, weight = 1 } = boost;
         if (typeof operator !== 'string')
           throw new Error(`operator requires an string value. Got: ${typeof operator}`);
@@ -626,6 +627,7 @@ class PuddySqlQuery {
         if (typeof weight !== 'number' || Number.isNaN(weight))
           throw new Error(`Boost 'weight' must be a valid number. Got: ${weight}`);
 
+        // No columns mode
         if (!columns) {
           if (typeof value !== 'string')
             throw new Error(
@@ -637,9 +639,11 @@ class PuddySqlQuery {
           continue;
         }
 
+        // Check columns
         if (!Array.isArray(columns) || columns.some((col) => typeof col !== 'string'))
           throw new Error(`Boost 'columns' must be a string or array of strings. Got: ${columns}`);
 
+        // In mode
         if (opValue === 'IN') {
           if (!Array.isArray(value))
             throw new Error(`'${opValue}' operator requires an array value. Got: ${typeof value}`);
@@ -649,7 +653,10 @@ class PuddySqlQuery {
             return `${col} IN (${inList})`;
           });
           cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
-        } else {
+        } 
+        
+        // Other modes
+        else {
           if (typeof value !== 'string')
             throw new Error(`'${opValue}' operator requires an string value. Got: ${typeof value}`);
 

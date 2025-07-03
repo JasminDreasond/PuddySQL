@@ -51,7 +51,7 @@ class TinySqlTags {
     this.parseLimit = -1;
 
     // json_each
-    this.jsonEach = 'json_array_elements_text';
+    this.jsonEach = 'json_each';
     this.specialQueries = [];
 
     this.wildcardA = '*';

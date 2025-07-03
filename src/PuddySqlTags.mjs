@@ -69,7 +69,7 @@ class PuddySqlTags {
    *
    * @type {string|null}
    */
-  #jsonEach = 'json_array_elements_text';
+  #jsonEach = 'json_each';
 
   /** @type {SpecialQuery[]} */
   #specialQueries = [];
