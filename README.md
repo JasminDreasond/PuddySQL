@@ -11,7 +11,7 @@
 </p>
 </div>
 
-# 🐾 PuddySQL
+# 🍮 PuddySQL
 
 **PuddySQL** is a modular and extensible SQL toolkit for Node.js — designed to make dynamic queries, filters, pagination, and tag-based searches easy, safe, and powerful.
 

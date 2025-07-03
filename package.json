@@ -1,6 +1,6 @@
 {
   "name": "puddysql",
-  "description": "🐾 Powerful SQL toolkit for Node.js, built with flexibility and structure in mind. Easily manage SQLite3/PostgreSQL, advanced queries, smart tag systems, and full JSON-friendly filters.",
+  "description": "🍮 Powerful SQL toolkit for Node.js, built with flexibility and structure in mind. Easily manage SQLite3/PostgreSQL, advanced queries, smart tag systems, and full JSON-friendly filters.",
   "version": "1.0.0-beta",
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",

@@ -1,4 +1,4 @@
-# 🐾 PuddySQL Toolkit
+# 🍮 PuddySQL Toolkit
 
 Welcome to the **PuddySQL** ecosystem — a modular toolkit for building advanced SQL query layers with clarity, safety, and full control over dynamic data access.
 
