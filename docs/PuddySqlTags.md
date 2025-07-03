@@ -197,6 +197,26 @@ json_each(tags)
 
 ## 🧱 Query Generation
 
+### 🔧 `setIsPgMode(value: boolean)`
+
+Sets whether the engine should behave as if it's running in PostgreSQL mode, affecting how some SQL queries (like array or tag checks) are constructed.
+
+📝 **Parameter**:
+
+  * `value` (`boolean`) – Must be `true` or `false`.
+
+---
+
+### 🧪 `getIsPgMode(): boolean`
+
+Retrieves whether the engine is currently in PostgreSQL mode.
+
+📝 **Returns**:
+
+  * `boolean` – `true` if running in PostgreSQL mode, `false` otherwise.
+
+---
+
 ### `parseWhere(group: TagCriteria, pCache: Pcache): string`
 
 Builds a SQL `WHERE` clause from a tag group definition.
