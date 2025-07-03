@@ -82,7 +82,7 @@ class PuddySqlTags {
   #parseLimit = -1;
 
   /** @type {string|null} */
-  #defaultValueName = null;
+  #defaultTableName = null;
 
   /**
    * Creates an instance of the PuddySqlTags class.
@@ -356,13 +356,13 @@ class PuddySqlTags {
   }
 
   /**
-   * Sets the alias name used in `EXISTS` subqueries, typically referencing `value`.
+   * Sets the external table name name used in `EXISTS` subqueries, typically referencing `value`.
    *
    * @param {string} value - The alias to use in SQL subqueries (e.g. 'value').
    */
-  setValueName(value) {
+  setTableName(value) {
     if (typeof value !== 'string') throw new Error('value must be a string');
-    this.#defaultValueName = value;
+    this.#defaultTableName = value;
   }
 
   /**
@@ -374,6 +374,30 @@ class PuddySqlTags {
   setJsonEach(value) {
     if (value !== null && typeof value !== 'string') throw new Error('value must be a string');
     this.#jsonEach = value;
+  }
+
+  #isPgMode = false;
+
+  /**
+   * Sets whether the engine is running in PostgreSQL mode.
+   *
+   * @param {boolean} value - Must be a boolean true/false.
+   * @throws {TypeError} If the value is not a boolean.
+   */
+  setIsPgMode(value) {
+    if (typeof value !== 'boolean') {
+      throw new TypeError(`setIsPgMode() expects a boolean, but received: ${typeof value}`);
+    }
+    this.#isPgMode = value;
+  }
+
+  /**
+   * Gets whether the engine is currently in PostgreSQL mode.
+   *
+   * @returns {boolean}
+   */
+  getIsPgMode() {
+    return this.#isPgMode;
   }
 
   /**
@@ -407,7 +431,7 @@ class PuddySqlTags {
 
     const where = [];
     const tagsColumn = group.column || this.getColumnName();
-    const tagsValue = group.valueName || this.#defaultValueName;
+    const tagsTable = group.tableName || this.#defaultTableName;
     const allowWildcards = typeof group.allowWildcards === 'boolean' ? group.allowWildcards : false;
 
     if (!Array.isArray(group.include))
@@ -417,17 +441,21 @@ class PuddySqlTags {
     const include = group.include;
 
     /**
-     * @param {string} funcName
+     * @param {boolean} not
      * @param {string} param
      * @param {boolean} [useLike=false]
      * @returns {string}
      */
-    const createQuery = (funcName, param, useLike = false) =>
-      `${funcName} (SELECT 1 FROM ${
-        this.#useJsonEach
-          ? `${this.#jsonEach}(${tagsColumn}) WHERE value ${useLike ? 'LIKE' : '='} ${param}`
-          : `${tagsColumn} WHERE ${tagsColumn}.${tagsValue} ${useLike ? 'LIKE' : '='} ${param}`
-      })`;
+    const createQuery = (not, param, useLike = false) =>
+      // Sqlite3
+      !this.#isPgMode
+        ? `${not ? 'NOT ' : ''}EXISTS (SELECT 1 FROM ${
+            this.#useJsonEach
+              ? `${this.#jsonEach}(${tagsColumn}) WHERE value ${useLike ? 'LIKE' : '='} ${param}`
+              : `${tagsColumn} WHERE ${tagsTable}.${tagsColumn} ${useLike ? 'LIKE' : '='} ${param}`
+          })`
+        : // Postgre
+          `${not ? 'NOT (' : ''}${param} = ANY(${tagsColumn})${not ? ')' : ''}`;
 
     /**
      * @param {string} tag
@@ -464,12 +492,12 @@ class PuddySqlTags {
         // if (!clause.length) throw new SyntaxError('Empty OR group inside "include" array');
         const ors = clause.map((tag) => {
           const { param, usesWildcard, not } = filterTag(tag);
-          return createQuery(`${not ? 'NOT ' : ''}EXISTS`, param, usesWildcard);
+          return createQuery(not, param, usesWildcard);
         });
         if (ors.length) where.push(`(${ors.join(' OR ')})`);
       } else {
         const { param, usesWildcard, not } = filterTag(clause);
-        where.push(createQuery(`${not ? 'NOT ' : ''}EXISTS`, param, usesWildcard));
+        where.push(createQuery(not, param, usesWildcard));
       }
     }
 
