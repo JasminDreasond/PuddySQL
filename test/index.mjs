@@ -138,7 +138,7 @@ const db = new PuddySql.Instance();
   console.log('\n🧠 Advanced Tag Search: cute AND not serious\n');
   console.table(
     await tagTable.search({
-      tagsQ: { column: 'tags', include: ['cute', '!serious'] }
+      tagsQ: { column: 'tags', include: ['cute', '!serious'] },
     }),
   );
 
@@ -149,13 +149,13 @@ const db = new PuddySql.Instance();
         boost: {
           alias: 'p',
           value: [
-          { columns: ['tags'], value: 'deep', weight: 3 },
-          { columns: ['tags'], value: 'cute', weight: 2 },
-        ]
-        }
+            { columns: ['tags'], value: 'deep', weight: 3 },
+            { columns: ['tags'], value: 'cute', weight: 2 },
+          ],
+        },
       },
-      tagsQ: { 
-        column: 'tags', 
+      tagsQ: {
+        column: 'tags',
         include: ['cute', 'deep'],
       },
     }),

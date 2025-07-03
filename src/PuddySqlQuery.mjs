@@ -653,8 +653,8 @@ class PuddySqlQuery {
             return `${col} IN (${inList})`;
           });
           cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
-        } 
-        
+        }
+
         // Other modes
         else {
           if (typeof value !== 'string')
@@ -2056,12 +2056,10 @@ class PuddySqlQuery {
    * @param {SelectQuery} [searchData.select='*'] - Which columns to select. Set to null to skip item data.
    * @param {string} [searchData.order] - SQL ORDER BY clause. Defaults to configured order.
    * @param {string|JoinObj|JoinObj[]} [searchData.join] - JOIN definitions with table, compare, and optional type.
-   * @returns {Promise<FindResult | null>}
+   * @returns {{ query: string; values: any[] | undefined; perPage: number; selectValue: SelectQuery; }}
    * @throws {Error} If searchData has invalid structure or values.
    */
-  async find(searchData = {}) {
-    const db = this.getDb();
-
+  findQuery(searchData = {}) {
     // --- Validate searchData types ---
     if (!isJsonObject(searchData)) throw new TypeError(`'searchData' must be a object`);
     const criteria = searchData.q || {};
@@ -2154,7 +2152,31 @@ class PuddySqlQuery {
     WHERE rn = 1
   `.trim();
 
-    const row = await db.get(query, pCache.values, 'find');
+    return { query, values: pCache.values, perPage, selectValue };
+  }
+
+  /**
+   * Finds the first item matching the filter, along with its position, page, and total info.
+   * Uses a single SQL query to calculate everything efficiently.
+   *
+   * If selectValue is null, it only returns the pagination/position data, not the item itself.
+   *
+   * @param {Object} [searchData={}] - Main search configuration.
+   * @param {QueryGroup} [searchData.q={}] - Nested criteria object.
+   * @param {TagCriteria[]|TagCriteria|null} [searchData.tagCriteria] - One or multiple tag criteria groups.
+   * @param {string[]} [searchData.tagCriteriaOps] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
+   * @param {number} [searchData.perPage] - Number of items per page.
+   * @param {SelectQuery} [searchData.select='*'] - Which columns to select. Set to null to skip item data.
+   * @param {string} [searchData.order] - SQL ORDER BY clause. Defaults to configured order.
+   * @param {string|JoinObj|JoinObj[]} [searchData.join] - JOIN definitions with table, compare, and optional type.
+   * @returns {Promise<FindResult | null>}
+   * @throws {Error} If searchData has invalid structure or values.
+   */
+  async find(searchData = {}) {
+    const db = this.getDb();
+    const { query, values, perPage, selectValue } = this.findQuery(searchData);
+
+    const row = await db.get(query, values, 'find');
     if (!row) return null;
 
     const total = parseInt(row.total);
@@ -2198,7 +2220,7 @@ class PuddySqlQuery {
    * @param {string|JoinObj|JoinObj[]} [searchData.join] - A string for single join or array of objects for multiple joins.
    *        Each object should contain `{ table: 'name', compare: 'ON clause' }`.
    * @param {number} [searchData.limit] - Max number of results to return (ignored when `perPage` is used).
-   * @returns {Promise<FreeObj[]|PaginationResult>} - Result rows matching the query.
+   * @returns {{ query: string; perPage: number | null; values: any[]; page: number; }}
    * @throws {Error} If searchData has invalid structure or values.
    *
    * @example
@@ -2235,9 +2257,7 @@ class PuddySqlQuery {
    *   order: 'created_at DESC'
    * });
    */
-
-  async search(searchData = {}) {
-    const db = this.getDb();
+  searchQuery(searchData = {}) {
     if (!isJsonObject(searchData)) throw new TypeError(`'searchData' must be a object`);
     const order = searchData.order || this.#settings.order;
     const join = searchData.join || this.#settings.join;
@@ -2339,6 +2359,34 @@ class PuddySqlQuery {
                        ${whereClause} 
                        ${orderClause} 
                        ${limitClause}`.trim();
+
+    return { query, perPage, values, page };
+  }
+
+  /**
+   * Perform a filtered search with advanced nested criteria, pagination, and customizable settings.
+   *
+   * Supports complex logical groupings (AND/OR), flat condition style, custom ordering, and single or multiple joins.
+   * Pagination can be enabled using `perPage`, and additional settings like `order`, `join`, and `limit` can be passed inside `searchData`.
+   *
+   * @param {Object} [searchData={}] - Main search configuration.
+   * @param {QueryGroup} [searchData.q={}] - Nested criteria object.
+   *        Can be a flat object style or grouped with `{ group: 'AND'|'OR', conditions: [...] }`.
+   * @param {TagCriteria[]|TagCriteria|null} [searchData.tagsQ] - One or multiple tag criteria groups.
+   * @param {string[]} [searchData.tagsOpsQ] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
+   * @param {SelectQuery} [searchData.select='*'] - Defines which columns or expressions should be selected in the query.
+   * @param {number|null} [searchData.perPage=null] - Number of results per page. If set, pagination is applied.
+   * @param {number} [searchData.page=1] - Page number to retrieve when `perPage` is used.
+   * @param {string} [searchData.order] - Custom `ORDER BY` clause (e.g. `'created_at DESC'`).
+   * @param {string|JoinObj|JoinObj[]} [searchData.join] - A string for single join or array of objects for multiple joins.
+   *        Each object should contain `{ table: 'name', compare: 'ON clause' }`.
+   * @param {number} [searchData.limit] - Max number of results to return (ignored when `perPage` is used).
+   * @returns {Promise<FreeObj[]|PaginationResult>} - Result rows matching the query.
+   * @throws {Error} If searchData has invalid structure or values.
+   */
+  async search(searchData = {}) {
+    const db = this.getDb();
+    const { query, values, perPage, page } = this.searchQuery(searchData);
 
     // Results
     let results;

@@ -881,6 +881,8 @@ Parses JOIN configuration into one or more SQL JOIN clauses.
 
 Finds the **first** matching result and returns its position, page, and optionally its data.
 
+Query only: `findQuery(searchData)`
+
 #### Parameters:
 - `searchData` (`object`)
   - `q`: QueryGroup or object condition
@@ -899,6 +901,8 @@ Finds the **first** matching result and returns its position, page, and optional
 ### 🔎 Method: `search(searchData)`
 
 Performs a complete filtered query with optional **pagination**, **joins**, and **tags**.
+
+Query only: `searchQuery(searchData)`
 
 #### Parameters:
 
