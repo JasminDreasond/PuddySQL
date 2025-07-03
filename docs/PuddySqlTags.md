@@ -179,9 +179,9 @@ This changes whether subqueries use JSON array iteration or direct joins.
 
 ---
 
-### `setValueName(value: string)`
+### `setTableName(value: string)`
 
-Sets the alias used in `EXISTS` subqueries (commonly `'value'`).
+Sets the external table name name used in `EXISTS` subqueries, typically referencing `value`.
 
 ---
 

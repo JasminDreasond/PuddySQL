@@ -33,7 +33,7 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  *
  * @typedef {Object} TagCriteria - Tag group definition to build the clause from.
  * @property {string} [group.column] - SQL column name for tag data (defaults to `this.getColumnName()`).
- * @property {string} [group.tableName] - Optional table name used (defaults to `this.defaultValueName`).
+ * @property {string} [group.tableName] - Optional table name used (defaults to `this.defaultTableName`).
  * @property {boolean} [group.allowWildcards=false] - Whether wildcards are allowed in matching.
  * @property {Array<string|string[]>} [group.include=[]] - Tag values or grouped OR conditions to include.
  */

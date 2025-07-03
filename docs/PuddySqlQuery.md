@@ -34,7 +34,7 @@ Result of a paginated SQL query locating a specific item:
 ### 🏷️ TagCriteria  
 Definition for tag group filtering in SQL clauses:  
 - **group.column** (`string` | optional): SQL column for tag data (default: `this.getColumnName()`).  
-- **group.valueName** (`string` | optional): Alias for JSON values (default: `this.defaultValueName`).  
+- **group.tableName** (`string` | optional): Table name used (default: `this.defaultTableName`).  
 - **group.allowWildcards** (`boolean` | optional): Allow wildcards in matching (default: `false`).  
 - **group.include** (`Array<string|string[]>`): Tag values or OR-groups to include in filtering.  
 
