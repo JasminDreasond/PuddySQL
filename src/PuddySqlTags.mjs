@@ -441,21 +441,36 @@ class PuddySqlTags {
     const include = group.include;
 
     /**
-     * @param {boolean} not
-     * @param {string} param
-     * @param {boolean} [useLike=false]
-     * @returns {string}
+     * Generates a subquery for checking tag inclusion/exclusion.
+     *
+     * @param {boolean} not - Whether the condition is a negation (NOT).
+     * @param {string} param - The parameter placeholder (e.g., `$1`, `$2`, etc.).
+     * @param {boolean} [useLike=false] - Whether to use `LIKE` instead of `=`.
+     * @returns {string} The SQL snippet for the tag existence check.
+     * @throws {Error} If SQLite mode is active and `tagsTable` is not defined.
      */
-    const createQuery = (not, param, useLike = false) =>
+    const createQuery = (not, param, useLike = false) => {
       // Sqlite3
-      !this.#isPgMode
-        ? `${not ? 'NOT ' : ''}EXISTS (SELECT 1 FROM ${
-            this.#useJsonEach
-              ? `${this.#jsonEach}(${tagsColumn}) WHERE value ${useLike ? 'LIKE' : '='} ${param}`
-              : `${tagsColumn} WHERE ${tagsTable}.${tagsColumn} ${useLike ? 'LIKE' : '='} ${param}`
-          })`
-        : // Postgre
-          `${not ? 'NOT (' : ''}${param} = ANY(${tagsColumn})${not ? ')' : ''}`;
+      if (!this.#isPgMode) {
+        let result;
+        if (this.#useJsonEach) {
+          result = `${this.#jsonEach}(${tagsColumn}) WHERE value ${useLike ? 'LIKE' : '='} ${param}`;
+        } else {
+          if (typeof tagsTable !== 'string' || tagsTable.trim() === '') {
+            throw new Error(
+              `Missing or invalid 'tagsTable'. Expected a non-empty string when using SQLite mode without json_each.`,
+            );
+          }
+          result = `${tagsColumn} WHERE ${tagsTable}.${tagsColumn} ${useLike ? 'LIKE' : '='} ${param}`;
+        }
+
+        return `${not ? 'NOT ' : ''}EXISTS (SELECT 1 FROM ${result})`;
+      }
+      // PostgreSQL
+      else {
+        return `${not ? 'NOT (' : ''}${param} = ANY(${tagsColumn})${not ? ')' : ''}`;
+      }
+    };
 
     /**
      * @param {string} tag
