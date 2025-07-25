@@ -1,6 +1,6 @@
 import { open, Database } from 'sqlite';
 import { EventEmitter } from 'events';
-import { isJsonObject } from 'tiny-essentials/dist/v1/basics/objChecker.mjs';
+import { isJsonObject } from 'tiny-essentials';
 
 import { validatePostgresParams } from './Utils.mjs';
 import { pg, sqlite3 } from './Modules.mjs';

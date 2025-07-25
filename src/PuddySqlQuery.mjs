@@ -1,4 +1,4 @@
-import { isJsonObject } from 'tiny-essentials/dist/v1/basics/objChecker.mjs';
+import { isJsonObject } from 'tiny-essentials';
 import { pg } from './Modules.mjs';
 import PuddySqlEngine from './PuddySqlEngine.mjs';
 import PuddySqlTags from './PuddySqlTags.mjs';
