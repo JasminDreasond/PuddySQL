@@ -14,7 +14,7 @@
   },
   "repository": "https://github.com/JasminDreasond/PuddySQL.git",
   "author": "Yasmin Seidel (JasminDreasond)",
-  "license": "GPL-3.0-only",
+  "license": "LGPL-3.0-only",
   "dependencies": {
     "@types/lodash": "^4.17.19",
     "@types/pg": "^8.15.4",
