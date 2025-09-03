@@ -2,6 +2,7 @@
 src
 old
 test
+md-assets
 .babelrc
 .prettierignore
 .prettierrc.json
