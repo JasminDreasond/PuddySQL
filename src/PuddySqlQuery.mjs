@@ -144,6 +144,7 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  * @property {string[]} [columns] - List of columns to apply the boost on.
  * @property {string} [operator='LIKE'] - Operator used in the condition (e.g., '=', 'LIKE').
  * @property {string|string[]} [value] - Value to match in the condition.
+ * @property {boolean} [array=false] - When true, performs matching using `json_each()` for JSON/ARRAY columns instead of text comparison.
  * @property {number} [weight=1] - Weight factor to boost results matching the condition.
  */
 
@@ -620,7 +621,7 @@ class PuddySqlQuery {
       // Boost
       for (const boost of boostArray) {
         // Validator
-        const { columns, operator = 'LIKE', value, weight = 1 } = boost;
+        const { columns, operator = 'LIKE', value, weight = 1, array = false } = boost;
         if (typeof operator !== 'string')
           throw new Error(`operator requires an string value. Got: ${typeof operator}`);
         const opValue = operator.toUpperCase();
@@ -643,7 +644,36 @@ class PuddySqlQuery {
         if (!Array.isArray(columns) || columns.some((col) => typeof col !== 'string'))
           throw new Error(`Boost 'columns' must be a string or array of strings. Got: ${columns}`);
 
-        // In mode
+        // JSON/ARRAY Mode
+        if (array === true) {
+          if (Array.isArray(value)) {
+            const conditions = columns.map((col) =>
+              `
+        EXISTS (
+          SELECT 1 FROM json_each(${col})
+          WHERE json_each.value IN (${value.map((v) => pg.escapeLiteral(v)).join(', ')})
+        )
+      `.trim(),
+            );
+            cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
+          } else if (typeof value === 'string') {
+            const safeVal = pg.escapeLiteral(value);
+            const conditions = columns.map((col) =>
+              `
+        EXISTS (
+          SELECT 1 FROM json_each(${col})
+          WHERE json_each.value = ${safeVal}
+        )
+      `.trim(),
+            );
+            cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
+          } else {
+            throw new Error(`'array' mode requires string or array value. Got: ${typeof value}`);
+          }
+          continue;
+        }
+
+        // IN Mode
         if (opValue === 'IN') {
           if (!Array.isArray(value))
             throw new Error(`'${opValue}' operator requires an array value. Got: ${typeof value}`);
@@ -653,19 +683,18 @@ class PuddySqlQuery {
             return `${col} IN (${inList})`;
           });
           cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
+          continue;
         }
 
-        // Other modes
-        else {
-          if (typeof value !== 'string')
-            throw new Error(`'${opValue}' operator requires an string value. Got: ${typeof value}`);
+        // Other modes (LIKE, =, etc.)
+        if (typeof value !== 'string')
+          throw new Error(`'${opValue}' operator requires a string value. Got: ${typeof value}`);
 
-          const safeVal = pg.escapeLiteral(
-            ['LIKE', 'ILIKE'].includes(opValue) ? `%${value}%` : value,
-          );
-          const conditions = columns.map((col) => `${col} ${operator} ${safeVal}`);
-          cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
-        }
+        const safeVal = pg.escapeLiteral(
+          ['LIKE', 'ILIKE'].includes(opValue) ? `%${value}%` : value,
+        );
+        const conditions = columns.map((col) => `${col} ${operator} ${safeVal}`);
+        cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
       }
 
       return `CASE ${cases.join(' ')} ELSE 0 END AS ${alias}`;

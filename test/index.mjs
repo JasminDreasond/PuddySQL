@@ -231,8 +231,8 @@ const db = new PuddySql.Instance();
         boost: {
           alias: 'p',
           value: [
-            { columns: ['tags'], value: 'deep', weight: 3 },
-            { columns: ['tags'], value: 'cute', weight: 2 },
+            { columns: ['tags'], array: true, value: 'deep', weight: 3 },
+            { columns: ['tags'], array: true, value: 'cute', weight: 2 },
           ],
         },
       },
@@ -248,8 +248,8 @@ const db = new PuddySql.Instance();
         boost: {
           alias: 'p',
           value: [
-            { columns: ['tags'], value: 'deep', weight: 3 },
-            { columns: ['tags'], value: 'cute', weight: 2 },
+            { columns: ['tags'], array: true, value: 'deep', weight: 3 },
+            { columns: ['tags'], array: true, value: 'cute', weight: 2 },
           ],
         },
       },
