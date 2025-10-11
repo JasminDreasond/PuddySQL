@@ -142,7 +142,7 @@ import PuddySqlTags from './PuddySqlTags.mjs';
  *
  * @typedef {Object} BoostValue
  * @property {string[]} [columns] - List of columns to apply the boost on.
- * @property {string} [operator='LIKE'] - Operator used in the condition (e.g., '=', 'LIKE').
+ * @property {''|'LIKE'|'ILIKE'} [operator=''] - Operator used in the condition (e.g., '=', 'LIKE').
  * @property {string|string[]} [value] - Value to match in the condition.
  * @property {boolean} [array=false] - When true, performs matching using `json_each()` for JSON/ARRAY columns instead of text comparison.
  * @property {number} [weight=1] - Weight factor to boost results matching the condition.
@@ -621,12 +621,16 @@ class PuddySqlQuery {
       // Boost
       for (const boost of boostArray) {
         // Validator
-        const { columns, operator = 'LIKE', value, weight = 1, array = false } = boost;
+        const { columns, operator = '', value, weight = 1, array = false } = boost;
         if (typeof operator !== 'string')
           throw new Error(`operator requires an string value. Got: ${typeof operator}`);
         const opValue = operator.toUpperCase();
         if (typeof weight !== 'number' || Number.isNaN(weight))
           throw new Error(`Boost 'weight' must be a valid number. Got: ${weight}`);
+        if (['LIKE', 'ILIKE', ''].indexOf(opValue) < 0)
+          throw new TypeError(
+            `Invalid operator '${opValue}'. Only 'LIKE', 'ILIKE', or empty string '' are allowed.`,
+          );
 
         // No columns mode
         if (!columns) {
