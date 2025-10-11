@@ -130,7 +130,7 @@ class PuddySqlTags {
   addTagInput(key, list, valueKey) {
     // Validation to ensure 'list' and 'valueKey' are strings
     if (typeof list !== 'string' || typeof valueKey !== 'string') {
-      throw new Error('Both list and valueKey must be strings');
+      throw new TypeError('Both list and valueKey must be strings');
     }
 
     // Prevents adding a tag with the list name "include"
@@ -210,7 +210,7 @@ class PuddySqlTags {
    * @param {boolean} value - True to allow repeated tags, false to prevent them.
    */
   setCanRepeat(value) {
-    if (typeof value !== 'boolean') throw new Error('value must be a boolean');
+    if (typeof value !== 'boolean') throw new TypeError('value must be a boolean');
     this.#noRepeat = !value;
   }
 
@@ -224,7 +224,7 @@ class PuddySqlTags {
   setWildcard(where, value) {
     if (where !== 'wildcardA' && where !== 'wildcardB')
       throw new Error("where must be 'wildcardA' or 'wildcardB'");
-    if (typeof value !== 'string') throw new Error('value must be a string');
+    if (typeof value !== 'string') throw new TypeError('value must be a string');
     if (where === 'wildcardA') this.#wildcardA = value;
     if (where === 'wildcardB') this.#wildcardB = value;
   }
@@ -238,7 +238,7 @@ class PuddySqlTags {
    */
   addSpecialQuery(config) {
     if (!isJsonObject(config) || typeof config.title !== 'string')
-      throw new Error('config must be an object with a string "title"');
+      throw new TypeError('config must be an object with a string "title"');
     this.#specialQueries.push(config);
   }
 
@@ -311,7 +311,7 @@ class PuddySqlTags {
    * @param {string} value - Column name to be used as default (e.g. 'tags').
    */
   setColumnName(value) {
-    if (typeof value !== 'string') throw new Error('value must be a string');
+    if (typeof value !== 'string') throw new TypeError('value must be a string');
     this.#defaultColumn = value;
   }
 
@@ -331,7 +331,7 @@ class PuddySqlTags {
    * @param {number} value - Maximum number of items to parse (use -1 for no limit).
    */
   setParseLimit(value) {
-    if (typeof value !== 'number') throw new Error('value must be a number');
+    if (typeof value !== 'number') throw new TypeError('value must be a number');
     this.#parseLimit = value;
   }
 
@@ -351,7 +351,7 @@ class PuddySqlTags {
    * @param {boolean} value - Whether to use `json_each()` in tag conditions.
    */
   setUseJsonEach(value) {
-    if (typeof value !== 'boolean') throw new Error('value must be a boolean');
+    if (typeof value !== 'boolean') throw new TypeError('value must be a boolean');
     this.#useJsonEach = value;
   }
 
@@ -361,7 +361,7 @@ class PuddySqlTags {
    * @param {string} value - The alias to use in SQL subqueries (e.g. 'value').
    */
   setTableName(value) {
-    if (typeof value !== 'string') throw new Error('value must be a string');
+    if (typeof value !== 'string') throw new TypeError('value must be a string');
     this.#defaultTableName = value;
   }
 
@@ -372,7 +372,7 @@ class PuddySqlTags {
    * @param {string} value - The SQL snippet (e.g. "json_each(tags)").
    */
   setJsonEach(value) {
-    if (value !== null && typeof value !== 'string') throw new Error('value must be a string');
+    if (value !== null && typeof value !== 'string') throw new TypeError('value must be a string');
     this.#jsonEach = value;
   }
 

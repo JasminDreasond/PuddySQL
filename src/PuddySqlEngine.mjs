@@ -56,7 +56,7 @@ class PuddySqlEngine {
    */
   isConnectionError(err) {
     if (typeof err !== 'object' || err === null || Array.isArray(err))
-      throw new Error('err must be a plain object');
+      throw new TypeError('err must be a plain object');
     const sqlEngine = this.getSqlEngine();
     if (typeof sqlEngine === 'string') {
       // PostgreSQL

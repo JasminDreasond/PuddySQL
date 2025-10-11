@@ -367,7 +367,7 @@ class PuddySqlQuery {
    */
   addCondition(key, conditionHandler, valueHandler = null) {
     if (typeof key !== 'string' || key.trim() === '') {
-      throw new Error(`Condition key must be a non-empty string.`);
+      throw new TypeError(`Condition key must be a non-empty string.`);
     }
     if (this.#conditions[key] || this.#customValFunc[key]) {
       throw new Error(`Condition key "${key}" already exists.`);
@@ -378,21 +378,21 @@ class PuddySqlQuery {
     const isObj = isJsonObject(conditionHandler);
 
     if (!isFunc && !isStr && !isObj) {
-      throw new Error(
+      throw new TypeError(
         `Condition handler must be a string (operator), an object with an "operator", or a function.`,
       );
     }
 
     if (isObj) {
       if (typeof conditionHandler.operator !== 'string' || !conditionHandler.operator.trim()) {
-        throw new Error(
+        throw new TypeError(
           `When using an object as condition handler, it must contain a non-empty string "operator" field.`,
         );
       }
     }
 
     if (valueHandler !== null && typeof valueHandler !== 'function')
-      throw new Error(`Custom value handler must be a function if provided.`);
+      throw new TypeError(`Custom value handler must be a function if provided.`);
 
     // Add condition
     this.#conditions[key] = isStr
@@ -613,9 +613,9 @@ class PuddySqlQuery {
      */
     const parseAdvancedBoosts = (boostArray, alias) => {
       if (!Array.isArray(boostArray))
-        throw new Error(`Boost 'value' must be an array. Received: ${typeof boostArray}`);
+        throw new TypeError(`Boost 'value' must be an array. Received: ${typeof boostArray}`);
       if (typeof alias !== 'string')
-        throw new Error(`Boost 'alias' must be an string. Received: ${typeof alias}`);
+        throw new TypeError(`Boost 'alias' must be an string. Received: ${typeof alias}`);
       const cases = [];
 
       // Boost
@@ -623,10 +623,10 @@ class PuddySqlQuery {
         // Validator
         const { columns, operator = '', value, weight = 1, array = false } = boost;
         if (typeof operator !== 'string')
-          throw new Error(`operator requires an string value. Got: ${typeof operator}`);
+          throw new TypeError(`operator requires an string value. Got: ${typeof operator}`);
         const opValue = operator.toUpperCase();
         if (typeof weight !== 'number' || Number.isNaN(weight))
-          throw new Error(`Boost 'weight' must be a valid number. Got: ${weight}`);
+          throw new TypeError(`Boost 'weight' must be a valid number. Got: ${weight}`);
         if (['LIKE', 'ILIKE', ''].indexOf(opValue) < 0)
           throw new TypeError(
             `Invalid operator '${opValue}'. Only 'LIKE', 'ILIKE', or empty string '' are allowed.`,
@@ -635,7 +635,7 @@ class PuddySqlQuery {
         // No columns mode
         if (!columns) {
           if (typeof value !== 'string')
-            throw new Error(
+            throw new TypeError(
               `Boost with no columns must provide a raw SQL string condition. Got: ${typeof value}`,
             );
 
@@ -646,7 +646,9 @@ class PuddySqlQuery {
 
         // Check columns
         if (!Array.isArray(columns) || columns.some((col) => typeof col !== 'string'))
-          throw new Error(`Boost 'columns' must be a string or array of strings. Got: ${columns}`);
+          throw new TypeError(
+            `Boost 'columns' must be a string or array of strings. Got: ${columns}`,
+          );
 
         // JSON/ARRAY Mode
         if (array === true) {
@@ -672,7 +674,9 @@ class PuddySqlQuery {
             );
             cases.push(`WHEN ${conditions.join(' OR ')} THEN ${weight}`);
           } else {
-            throw new Error(`'array' mode requires string or array value. Got: ${typeof value}`);
+            throw new TypeError(
+              `'array' mode requires string or array value. Got: ${typeof value}`,
+            );
           }
           continue;
         }
@@ -680,7 +684,9 @@ class PuddySqlQuery {
         // IN Mode
         if (opValue === 'IN') {
           if (!Array.isArray(value))
-            throw new Error(`'${opValue}' operator requires an array value. Got: ${typeof value}`);
+            throw new TypeError(
+              `'${opValue}' operator requires an array value. Got: ${typeof value}`,
+            );
 
           const conditions = columns.map((col) => {
             const inList = value.map((v) => pg.escapeLiteral(v)).join(', ');
@@ -692,7 +698,9 @@ class PuddySqlQuery {
 
         // Other modes (LIKE, =, etc.)
         if (typeof value !== 'string')
-          throw new Error(`'${opValue}' operator requires a string value. Got: ${typeof value}`);
+          throw new TypeError(
+            `'${opValue}' operator requires a string value. Got: ${typeof value}`,
+          );
 
         const safeVal = pg.escapeLiteral(
           ['LIKE', 'ILIKE'].includes(opValue) ? `%${value}%` : value,
@@ -741,7 +749,7 @@ class PuddySqlQuery {
           throw new TypeError(`'boost' must be an object. Got: ${typeof input.boost}`);
 
         if (typeof input.boost.alias !== 'string')
-          throw new Error('Missing or invalid boost.alias in selectGenerator');
+          throw new TypeError('Missing or invalid boost.alias in selectGenerator');
         if (input.boost.value)
           result.push(parseAdvancedBoosts(input.boost.value, input.boost.alias));
       }
@@ -749,14 +757,14 @@ class PuddySqlQuery {
       // Complete
       if (result.length > 0) return result.join(', ');
       else
-        throw new Error(
+        throw new TypeError(
           `Invalid input object keys for selectGenerator. Expected non-empty string.`,
         );
     }
 
     // Nothing
     else
-      throw new Error(
+      throw new TypeError(
         `Invalid input type for selectGenerator. Expected string, array, or object but received: ${typeof input}`,
       );
   }
@@ -791,7 +799,7 @@ class PuddySqlQuery {
    */
   #sqlOpStringVal = (value) => {
     if (typeof value !== 'string')
-      throw new Error(`SQL Op value must be string. Got: ${typeof value}.`);
+      throw new TypeError(`SQL Op value must be string. Got: ${typeof value}.`);
     return value;
   };
 
@@ -854,7 +862,7 @@ class PuddySqlQuery {
       throw new TypeError(`Expected 'changes' to be an array of arrays. Got: ${typeof changes}`);
 
     const tableName = this.#settings?.name;
-    if (!tableName) throw new Error('Missing table name in settings');
+    if (!tableName) throw new TypeError('Missing table name in settings');
 
     for (const change of changes) {
       const [action, ...args] = change;
@@ -998,9 +1006,9 @@ class PuddySqlQuery {
       if (col.length >= 2 && typeof col[1] === 'string') {
         const [name, type] = col;
         if (typeof name !== 'string')
-          throw new Error(`Expected 'name' to be string in index "${i}", got ${typeof name}`);
+          throw new TypeError(`Expected 'name' to be string in index "${i}", got ${typeof name}`);
         if (typeof type !== 'string')
-          throw new Error(`Expected 'type' to be string in index "${i}", got ${typeof type}`);
+          throw new TypeError(`Expected 'type' to be string in index "${i}", got ${typeof type}`);
         // Tags
         if (type.toUpperCase() === 'TAGS') {
           col[1] = 'JSON';
@@ -1012,25 +1020,37 @@ class PuddySqlQuery {
       // If the column definition contains more than two items, it's a full definition
       if (col.length === 3) {
         if (typeof col[0] !== 'string')
-          throw new Error(`Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`);
+          throw new TypeError(
+            `Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`,
+          );
         if (typeof col[1] !== 'string')
-          throw new Error(`Expected 'col[1]' to be string in index "${i}", got ${typeof col[1]}`);
+          throw new TypeError(
+            `Expected 'col[1]' to be string in index "${i}", got ${typeof col[1]}`,
+          );
         if (typeof col[2] !== 'string')
-          throw new Error(`Expected 'col[2]' to be string in index "${i}", got ${typeof col[2]}`);
+          throw new TypeError(
+            `Expected 'col[2]' to be string in index "${i}", got ${typeof col[2]}`,
+          );
         return `${col[0]} ${col[1]} ${col[2]}`;
       }
       // If only two items are provided, it's just the name and type (no additional configuration)
       else if (col.length === 2) {
         if (typeof col[0] !== 'string')
-          throw new Error(`Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`);
+          throw new TypeError(
+            `Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`,
+          );
         if (typeof col[1] !== 'string')
-          throw new Error(`Expected 'col[1]' to be string in index "${i}", got ${typeof col[1]}`);
+          throw new TypeError(
+            `Expected 'col[1]' to be string in index "${i}", got ${typeof col[1]}`,
+          );
         return `${col[0]} ${col[1]}`;
       }
       // If only one item is provided, it's a table setting (e.g., PRIMARY KEY)
       else if (col.length === 1) {
         if (typeof col[0] !== 'string')
-          throw new Error(`Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`);
+          throw new TypeError(
+            `Expected 'col[0]' to be string in index "${i}", got ${typeof col[0]}`,
+          );
         return col[0];
       }
 
@@ -1050,15 +1070,15 @@ class PuddySqlQuery {
       if (column.length >= 2) {
         const [name, type, options] = column;
         if (typeof name !== 'string')
-          throw new Error(
+          throw new TypeError(
             `Invalid name of column definition at index ${i}: ${JSON.stringify(column)}`,
           );
         if (typeof type !== 'undefined' && typeof type !== 'string')
-          throw new Error(
+          throw new TypeError(
             `Invalid type of column definition at index ${i}: ${JSON.stringify(column)}`,
           );
         if (typeof options !== 'undefined' && typeof options !== 'string')
-          throw new Error(
+          throw new TypeError(
             `Invalid options of column definition at index ${i}: ${JSON.stringify(column)}`,
           );
         this.#table[name] = {
@@ -1398,9 +1418,9 @@ class PuddySqlQuery {
    */
   async has(id, subId) {
     if (typeof id !== 'string' && typeof id !== 'number')
-      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+      throw new TypeError(`Expected 'id' to be string or number, got ${typeof id}`);
     if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
-      throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
+      throw new TypeError(`Expected 'subId' to be string or number, got ${typeof subId}`);
     if (!this.#settings?.name || !this.#settings?.id)
       throw new Error('Invalid table settings: name and id must be defined.');
 
@@ -1432,7 +1452,7 @@ class PuddySqlQuery {
       const result = [];
       for (const tag of raw) {
         if (typeof tag === 'string') result.push(tag);
-        else throw new Error('Invalid tag format: each tag must be a string.');
+        else throw new TypeError('Invalid tag format: each tag must be a string.');
       }
       return JSON.stringify(result);
     },
@@ -1501,7 +1521,7 @@ class PuddySqlQuery {
   async update(id, valueObj = {}) {
     const db = this.getDb();
     if (typeof id !== 'string' && typeof id !== 'number')
-      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+      throw new TypeError(`Expected 'id' to be string or number, got ${typeof id}`);
     if (!isJsonObject(valueObj) || Object.keys(valueObj).length === 0)
       throw new Error('No update values provided for update');
 
@@ -1556,7 +1576,7 @@ class PuddySqlQuery {
     // Array form validations
     if (isValidArray) {
       if (!Array.isArray(id))
-        throw new Error(
+        throw new TypeError(
           `When 'valueObj' is an array, 'id' must also be an array (got ${typeof id})`,
         );
 
@@ -1665,9 +1685,9 @@ class PuddySqlQuery {
    */
   async get(id, subId) {
     if (typeof id !== 'string' && typeof id !== 'number')
-      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+      throw new TypeError(`Expected 'id' to be string or number, got ${typeof id}`);
     if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
-      throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
+      throw new TypeError(`Expected 'subId' to be string or number, got ${typeof subId}`);
 
     const db = this.getDb();
     const useSub =
@@ -1716,9 +1736,9 @@ class PuddySqlQuery {
    */
   async delete(id, subId) {
     if (typeof id !== 'string' && typeof id !== 'number')
-      throw new Error(`Expected 'id' to be string or number, got ${typeof id}`);
+      throw new TypeError(`Expected 'id' to be string or number, got ${typeof id}`);
     if (typeof subId !== 'undefined' && typeof subId !== 'string' && typeof subId !== 'number')
-      throw new Error(`Expected 'subId' to be string or number, got ${typeof subId}`);
+      throw new TypeError(`Expected 'subId' to be string or number, got ${typeof subId}`);
 
     const db = this.getDb();
     const useSub =
@@ -1745,9 +1765,9 @@ class PuddySqlQuery {
   async getAmount(count, filterId = null, selectValue = '*') {
     const db = this.getDb();
     if (typeof count !== 'number')
-      throw new Error(`Expected 'count' to be number, got ${typeof count}`);
+      throw new TypeError(`Expected 'count' to be number, got ${typeof count}`);
     if (filterId !== null && typeof filterId !== 'string' && typeof filterId !== 'number')
-      throw new Error(`Expected 'filterId' to be string or number, got ${typeof filterId}`);
+      throw new TypeError(`Expected 'filterId' to be string or number, got ${typeof filterId}`);
 
     const orderClause = this.#settings.order ? `ORDER BY ${this.#settings.order}` : '';
     const whereClause = filterId !== null ? `WHERE t.${this.#settings.id} = $1` : '';
@@ -1772,7 +1792,7 @@ class PuddySqlQuery {
    */
   async getAll(filterId = null, selectValue = '*') {
     if (filterId !== null && typeof filterId !== 'string' && typeof filterId !== 'number')
-      throw new Error(`Expected 'filterId' to be string or number, got ${typeof filterId}`);
+      throw new TypeError(`Expected 'filterId' to be string or number, got ${typeof filterId}`);
     const db = this.getDb();
     const orderClause = this.#settings.order ? `ORDER BY ${this.#settings.order}` : '';
     const whereClause = filterId !== null ? `WHERE t.${this.#settings.id} = $1` : '';
@@ -1798,15 +1818,15 @@ class PuddySqlQuery {
    */
   async execPagination(query, params, perPage, page, queryName = '') {
     if (typeof query !== 'string')
-      throw new Error(`Expected 'query' to be a string, got ${typeof query}`);
+      throw new TypeError(`Expected 'query' to be a string, got ${typeof query}`);
     if (!Array.isArray(params))
-      throw new Error(`Expected 'params' to be an array, got ${typeof params}`);
+      throw new TypeError(`Expected 'params' to be an array, got ${typeof params}`);
     if (!Number.isInteger(perPage) || perPage < 0)
       throw new RangeError(`'perPage' must be a non-negative integer. Received: ${perPage}`);
     if (!Number.isInteger(page) || page < 1)
       throw new RangeError(`'page' must be an integer >= 1. Received: ${page}`);
     if (typeof queryName !== 'string')
-      throw new Error(`Expected 'queryName' to be a string, got ${typeof queryName}`);
+      throw new TypeError(`Expected 'queryName' to be a string, got ${typeof queryName}`);
 
     const db = this.getDb();
     const offset = (page - 1) * perPage;
@@ -2111,7 +2131,7 @@ class PuddySqlQuery {
       throw new TypeError(`'searchData.q' must be a plain object or nested QueryGroup`);
 
     if (perPage == null || typeof perPage !== 'number' || !Number.isInteger(perPage) || perPage < 1)
-      throw new Error(`'searchData.perPage' must be a positive integer (≥ 1), got: ${perPage}`);
+      throw new TypeError(`'searchData.perPage' must be a positive integer (≥ 1), got: ${perPage}`);
 
     if (
       selectValue !== null &&

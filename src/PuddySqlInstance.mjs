@@ -86,7 +86,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * @param {boolean} state - Set to `true` to enable colors, or `false` to disable.
    */
   setConsoleColors(state) {
-    if (typeof state !== 'boolean') throw new Error('state must be a boolean');
+    if (typeof state !== 'boolean') throw new TypeError('state must be a boolean');
     this.#consoleColors = state;
   }
 
@@ -108,7 +108,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    */
   #debugSql(value) {
     if (typeof value !== 'string' || value.trim() === '')
-      throw new Error('value must be a non-empty string');
+      throw new TypeError('value must be a non-empty string');
 
     const useColor = this.#consoleColors !== false;
 
@@ -362,9 +362,10 @@ class PuddySqlInstance extends PuddySqlEngine {
    */
   #debugConsoleText(id, debugName = '', status = '') {
     if (typeof id !== 'string' && typeof id !== 'number')
-      throw new Error('id must be a string or number');
-    if (typeof debugName !== 'string') throw new Error('debugName must be a string if provided');
-    if (typeof status !== 'string') throw new Error('status must be a string if provided');
+      throw new TypeError('id must be a string or number');
+    if (typeof debugName !== 'string')
+      throw new TypeError('debugName must be a string if provided');
+    if (typeof status !== 'string') throw new TypeError('status must be a string if provided');
     const useColor = this.#consoleColors !== false;
 
     const reset = useColor ? '\x1b[0m' : '';
@@ -402,7 +403,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    * @param {boolean} isDebug - If true, debug mode is enabled; otherwise, it's disabled.
    */
   setIsDebug(isDebug) {
-    if (typeof isDebug !== 'boolean') throw new Error('isDebug must be a boolean');
+    if (typeof isDebug !== 'boolean') throw new TypeError('isDebug must be a boolean');
     this.#debug = isDebug;
   }
 
@@ -432,8 +433,8 @@ class PuddySqlInstance extends PuddySqlEngine {
    * @throws {Error} If the table has already been initialized.
    */
   async initTable(settings = {}, tableData = []) {
-    if (!isJsonObject(settings)) throw new Error('settings must be a plain object');
-    if (typeof settings.name !== 'string') throw new Error('settings.name must be a string');
+    if (!isJsonObject(settings)) throw new TypeError('settings must be a plain object');
+    if (typeof settings.name !== 'string') throw new TypeError('settings.name must be a string');
     if (!this.#tables[settings.name]) {
       const newTable = new PuddySqlQuery();
       newTable.setDb(settings, this);
@@ -456,7 +457,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    */
   getTable(tableName) {
     if (typeof tableName !== 'string' || tableName.trim() === '')
-      throw new Error('tableName must be a non-empty string');
+      throw new TypeError('tableName must be a non-empty string');
     const table = this.#tables[tableName];
     if (!table) throw new Error(`Table "${tableName}" does not exist`);
     return table;
@@ -486,7 +487,7 @@ class PuddySqlInstance extends PuddySqlEngine {
    */
   removeTable(tableName) {
     if (typeof tableName !== 'string' || tableName.trim() === '')
-      throw new Error('tableName must be a non-empty string');
+      throw new TypeError('tableName must be a non-empty string');
     if (!this.#tables[tableName])
       throw new Error(`Table "${tableName}" does not exist and cannot be removed`);
     delete this.#tables[tableName];
