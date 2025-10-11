@@ -109,9 +109,56 @@ const db = new PuddySql.Instance();
 
   const tagManager = tagTable.getTagEditor('tags');
 
-  await tagTable.set('a1', { title: 'Post 1', tags: ['cute', 'funny'] });
-  await tagTable.set('a2', { title: 'Post 2', tags: ['serious'] });
-  await tagTable.set('a3', { title: 'Post 3', tags: ['cute', 'deep'] });
+  await tagTable.set('a1', {
+    title: 'Post 1',
+    tags: ['cute', 'funny', 'smiling', 'safe', 'pony', 'solo'],
+  });
+
+  await tagTable.set('a2', {
+    title: 'Post 2',
+    tags: ['serious', 'portrait', 'grayscale', 'sad', 'moody', 'artistic'],
+  });
+
+  await tagTable.set('a3', {
+    title: 'Post 3',
+    tags: ['cute', 'deep', 'friendship', 'heartwarming', 'sunset'],
+  });
+
+  await tagTable.set('a4', {
+    title: 'Post 4',
+    tags: ['adventure', 'flying', 'rainbow', 'dynamic pose', 'epic'],
+  });
+
+  await tagTable.set('a5', {
+    title: 'Post 5',
+    tags: ['comic', 'dialogue', 'cute', 'humor', 'slice of life', 'safe'],
+  });
+
+  await tagTable.set('a6', {
+    title: 'Post 6',
+    tags: ['serious', 'cute', 'magic', 'sparkles', 'fantasy', 'unicorn', 'glow'],
+  });
+
+  await tagTable.set('a7', {
+    title: 'Post 7',
+    tags: ['background pony', 'deep', 'crowd', 'event', 'festival', 'fun'],
+  });
+
+  await tagTable.set('a8', {
+    title: 'Post 8',
+    tags: ['artist:jasmindreasond', 'digital art', 'soft shading', 'pastel colors', 'aesthetic'],
+  });
+
+  await tagTable.set('a9', {
+    title: 'Post 9',
+    tags: ['meme', 'meta', 'fourth wall', 'funny', 'safe'],
+  });
+
+  await tagTable.set('a10', {
+    title: 'Post 10',
+    tags: ['dark', 'night', 'stars', 'dream', 'mystery', 'atmospheric'],
+  });
+
   console.table(await tagTable.getAll());
 
   console.log('\n🔖 \x1b[34mSearch: has tag "cute"\x1b[0m\n');
@@ -128,10 +175,59 @@ const db = new PuddySql.Instance();
     }),
   );
 
+  await tagTable.set('a11', { title: 'Sunny Morning', tags: ['cute', 'funny', 'smiling', 'safe'] });
+  await tagTable.set('a12', { title: 'Deep Reflections', tags: ['deep', 'philosophy', 'serious'] });
+  await tagTable.set('a13', {
+    title: 'Friendly Hug',
+    tags: ['cute', 'deep', 'heartwarming', 'safe'],
+  });
+  await tagTable.set('a14', {
+    title: 'Stormy Night',
+    tags: ['dark', 'mystery', 'deep', 'atmospheric'],
+  });
+  await tagTable.set('a15', {
+    title: 'Comic Strip Fun',
+    tags: ['comic', 'humor', 'funny', 'safe'],
+  });
+  await tagTable.set('a16', {
+    title: 'Dreamy Meadow',
+    tags: ['cute', 'pastel colors', 'peaceful'],
+  });
+  await tagTable.set('a17', { title: 'Ancient Wisdom', tags: ['deep', 'mythology', 'mystical'] });
+  await tagTable.set('a18', {
+    title: 'Digital Portrait',
+    tags: ['artistic', 'portrait', 'soft shading'],
+  });
+  await tagTable.set('a19', {
+    title: 'Festival of Lights',
+    tags: ['celebration', 'crowd', 'fun', 'bright'],
+  });
+  await tagTable.set('a20', {
+    title: 'Philosopher’s Gaze',
+    tags: ['deep', 'serious', 'emotional'],
+  });
+  await tagTable.set('a21', {
+    title: 'Cute Picnic',
+    tags: ['cute', 'friends', 'outdoors', 'happy'],
+  });
+  await tagTable.set('a22', { title: 'Silent Library', tags: ['deep', 'quiet', 'mysterious'] });
+  await tagTable.set('a23', { title: 'Sleepy Afternoon', tags: ['cute', 'relaxed', 'soft light'] });
+  await tagTable.set('a24', { title: 'Galaxy Wonders', tags: ['space', 'stars', 'deep', 'awe'] });
+  await tagTable.set('a25', {
+    title: 'Breezy Fields',
+    tags: ['cute', 'peaceful', 'safe', 'scenic'],
+  });
+  await tagTable.set('a26', { title: 'Tearful Goodbye', tags: ['deep', 'emotional', 'sad'] });
+  await tagTable.set('a27', { title: 'Meme Magic', tags: ['meme', 'funny', 'meta', 'safe'] });
+  await tagTable.set('a28', { title: 'Nighttime Thoughts', tags: ['deep', 'dream', 'melancholy'] });
+  await tagTable.set('a29', { title: 'Happy Dance', tags: ['cute', 'funny', 'joy', 'safe'] });
+  await tagTable.set('a30', { title: 'Old Photograph', tags: ['nostalgia', 'deep', 'monochrome'] });
+
   console.log('\n⚡ \x1b[35mBoosted Tag Search (cute *2, deep *3)\x1b[0m\n');
   console.table(
     await tagTable.search({
       select: {
+        values: ['*'],
         boost: {
           alias: 'p',
           value: [
@@ -141,6 +237,24 @@ const db = new PuddySql.Instance();
         },
       },
       tagsQ: { column: 'tags', include: ['cute', 'deep'] },
+    }),
+  );
+
+  console.log('\n⚡ \x1b[35mBoosted Tag Search (cute *2 OR deep *3)\x1b[0m\n');
+  console.table(
+    await tagTable.search({
+      select: {
+        values: ['*'],
+        boost: {
+          alias: 'p',
+          value: [
+            { columns: ['tags'], value: 'deep', weight: 3 },
+            { columns: ['tags'], value: 'cute', weight: 2 },
+          ],
+        },
+      },
+      tagsQ: { column: 'tags', include: [['cute', 'deep']] },
+      order: 'p DESC',
     }),
   );
 
