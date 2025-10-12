@@ -235,6 +235,25 @@ Builds a SQL `WHERE` clause from a tag group definition.
 
 ---
 
+### `parseWhereFlat(group: TagCriteria, pCache: Pcache): string`
+
+Builds an SQL `WHERE` clause for *flat* tag tables — where each row contains a single tag value.
+
+* Does **not** use `EXISTS` or `json_each`
+* Supports **negation** (`!tag`)
+* Handles **wildcards** (`*`, `?`) when enabled
+* Allows **OR groups** using nested arrays
+* Updates `pCache` in-place with positional parameters (`$1`, `$2`, ...)
+
+📝 **Returns**:
+A complete SQL `WHERE` expression string like:
+
+```sql
+(tag = $1 AND (tag LIKE $2 OR tag != $3))
+```
+
+---
+
 ## 🧬 Internal Parsing Logic
 
 ### `#extractSpecialsFromChunks(chunks: Chunks): object`

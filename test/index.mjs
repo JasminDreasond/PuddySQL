@@ -262,7 +262,7 @@ const db = new PuddySql.Instance();
     return value;
   }});
 
-  const tagsList = `(pinkie pie OR rarity) AND (applejack OR rarity) AND (farm OR boutique) AND (!party OR balloons) AND rating:safe AND order:random AND NOT order:random2`;
+  const tagsList = `(pinkie pie OR rarity) AND (applejack OR rarity) AND (farm OR boutique) AND (!party OR balloons^2) AND rating:safe AND order:random AND NOT order:random2`;
 
   console.log('\n🔖 \x1b[34mParse Tags: JSON\x1b[0m\n');
   console.log(tagsList);
