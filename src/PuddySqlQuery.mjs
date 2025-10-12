@@ -1301,7 +1301,7 @@ class PuddySqlQuery {
     for (const item in result) {
       const column = this.#table?.[item];
       if (!column || result[item] == null) continue;
-      const type = column.type || '';
+      const type = column.type ?? '';
       const raw = result[item];
       if (typeof this.#jsonEscapeAlias[type] === 'function')
         result[item] = this.#jsonEscapeAlias[type](raw);
@@ -1466,7 +1466,7 @@ class PuddySqlQuery {
    */
   escapeValuesFix(v, name) {
     const column = this.#table?.[name];
-    const type = column.type || '';
+    const type = column.type ?? '';
     const func = this.#jsonEscapeFix[type];
     if (typeof func !== 'function') return v;
     else return func(v);
@@ -1978,7 +1978,7 @@ class PuddySqlQuery {
    */
   insertJoin() {
     return typeof this.#settings.join === 'string'
-      ? `LEFT JOIN ${this.#settings.join} j ON ${this.#settings.joinCompare || ''}`
+      ? `LEFT JOIN ${this.#settings.join} j ON ${this.#settings.joinCompare ?? ''}`
       : '';
   }
 
@@ -2106,6 +2106,7 @@ class PuddySqlQuery {
    * @param {QueryGroup} [searchData.q={}] - Nested criteria object.
    * @param {TagCriteria[]|TagCriteria|null} [searchData.tagCriteria] - One or multiple tag criteria groups.
    * @param {string[]} [searchData.tagCriteriaOps] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
+   * @param {boolean} [searchData.isFlatTags=false] - Use the parseWhereFlat mode to tags.
    * @param {number} [searchData.perPage] - Number of items per page.
    * @param {SelectQuery} [searchData.select='*'] - Which columns to select. Set to null to skip item data.
    * @param {string} [searchData.order] - SQL ORDER BY clause. Defaults to configured order.
@@ -2116,16 +2117,17 @@ class PuddySqlQuery {
   findQuery(searchData = {}) {
     // --- Validate searchData types ---
     if (!isJsonObject(searchData)) throw new TypeError(`'searchData' must be a object`);
-    const criteria = searchData.q || {};
-    const tagCriteria = searchData.tagCriteria || null;
+    const criteria = searchData.q ?? {};
+    const tagCriteria = searchData.tagCriteria ?? null;
+    const isFlatTags = searchData.isFlatTags ?? false;
     const tagCriteriaOps = Array.isArray(searchData.tagCriteriaOps)
       ? searchData.tagCriteriaOps
       : [];
 
     const selectValue = searchData.select ?? '*';
-    const perPage = searchData.perPage || null;
-    const order = searchData.order || this.#settings.order;
-    const joinConfig = searchData.join || null;
+    const perPage = searchData.perPage ?? null;
+    const order = searchData.order ?? this.#settings.order;
+    const joinConfig = searchData.join ?? null;
 
     if (!isJsonObject(criteria))
       throw new TypeError(`'searchData.q' must be a plain object or nested QueryGroup`);
@@ -2170,7 +2172,9 @@ class PuddySqlQuery {
           throw new TypeError(`'group.column' must be a string if defined`);
 
         const tag = this.getTagEditor(group.column);
-        const clause = tag.parseWhere(group, pCache);
+        const clause = !isFlatTags
+          ? tag.parseWhere(group, pCache)
+          : tag.parseWhereFlat(group, pCache);
         if (!clause) return;
 
         const op = i > 0 ? tagCriteriaOps[i - 1] || 'AND' : null;
@@ -2182,7 +2186,9 @@ class PuddySqlQuery {
         throw new TypeError(`'tagCriteria.column' must be a string if defined`);
 
       const tag = this.getTagEditor(tagCriteria.column);
-      const clause = tag.parseWhere(tagCriteria, pCache);
+      const clause = !isFlatTags
+        ? tag.parseWhere(tagCriteria, pCache)
+        : tag.parseWhereFlat(tagCriteria, pCache);
       if (clause) whereParts.push(clause);
     }
 
@@ -2269,6 +2275,7 @@ class PuddySqlQuery {
    * @param {string[]} [searchData.tagsOpsQ] - Optional logical operators between tag groups (e.g., ['AND', 'OR']).
    * @param {SelectQuery} [searchData.select='*'] - Defines which columns or expressions should be selected in the query.
    * @param {number|null} [searchData.perPage=null] - Number of results per page. If set, pagination is applied.
+   * @param {boolean} [searchData.isFlatTags=false] - Use the parseWhereFlat mode to tags.
    * @param {number} [searchData.page=1] - Page number to retrieve when `perPage` is used.
    * @param {string} [searchData.order] - Custom `ORDER BY` clause (e.g. `'created_at DESC'`).
    * @param {string|JoinObj|JoinObj[]} [searchData.join] - A string for single join or array of objects for multiple joins.
@@ -2313,15 +2320,16 @@ class PuddySqlQuery {
    */
   searchQuery(searchData = {}) {
     if (!isJsonObject(searchData)) throw new TypeError(`'searchData' must be a object`);
-    const order = searchData.order || this.#settings.order;
-    const join = searchData.join || this.#settings.join;
-    const limit = searchData.limit || null;
-    const selectValue = searchData.select || '*';
-    const perPage = searchData.perPage || null;
-    const page = searchData.page || 1;
+    const order = searchData.order ?? this.#settings.order;
+    const join = searchData.join ?? this.#settings.join;
+    const limit = searchData.limit ?? null;
+    const selectValue = searchData.select ?? '*';
+    const perPage = searchData.perPage ?? null;
+    const page = searchData.page ?? 1;
 
-    const criteria = searchData.q || {};
-    const tagCriteria = searchData.tagsQ || {};
+    const criteria = searchData.q ?? {};
+    const tagCriteria = searchData.tagsQ ?? {};
+    const isFlatTags = searchData.isFlatTags ?? false;
     const tagCriteriaOps = searchData.tagsOpsQ;
 
     // --- Validate searchData types ---
@@ -2383,7 +2391,9 @@ class PuddySqlQuery {
           throw new TypeError(`Each item in 'tagsQ' must be a valid object`);
 
         const tag = this.getTagEditor(group.column);
-        const clause = tag.parseWhere(group, pCache);
+        const clause = !isFlatTags
+          ? tag.parseWhere(group, pCache)
+          : tag.parseWhereFlat(group, pCache);
         if (!clause) return;
 
         const op = i > 0 ? operators[i - 1] || 'AND' : null;
@@ -2392,7 +2402,9 @@ class PuddySqlQuery {
       });
     } else if (isJsonObject(tagCriteria) && typeof tagCriteria.column === 'string') {
       const tag = this.getTagEditor(tagCriteria.column);
-      const clause = tag.parseWhere(tagCriteria, pCache);
+      const clause = !isFlatTags
+        ? tag.parseWhere(tagCriteria, pCache)
+        : tag.parseWhereFlat(tagCriteria, pCache);
       if (clause) whereParts.push(clause);
     }
 
