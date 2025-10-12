@@ -107,8 +107,6 @@ const db = new PuddySql.Instance();
     ['tags', 'TAGS'],
   ]);
 
-  const tagManager = tagTable.getTagEditor('tags');
-
   await tagTable.set('a1', {
     title: 'Post 1',
     tags: ['cute', 'funny', 'smiling', 'safe', 'pony', 'solo'],
@@ -257,6 +255,23 @@ const db = new PuddySql.Instance();
       order: 'p DESC',
     }),
   );
+
+  const tagManager = tagTable.getTagEditor('tags');
+  tagManager.addSpecialQuery({ title: 'rating', parser: (value) => {
+    console.log(`\n🔖 \x1b[34mRating Tag Detected: ${value}\x1b[0m\n`);
+    return value;
+  }});
+
+  const tagsList = `(pinkie pie OR rarity) AND (applejack OR rarity) AND (farm OR boutique) AND (!party OR balloons) AND rating:safe AND order:random AND NOT order:random2`;
+
+  console.log('\n🔖 \x1b[34mParse Tags: JSON\x1b[0m\n');
+  console.log(tagsList);
+  const tagParse = tagManager.safeParseString(tagsList);
+  console.log(tagParse);
+  console.log('\n🔖 \x1b[34mParse JSON: JSON\x1b[0m\n');
+  console.log(tagManager.parseWhere(tagParse));
+  console.log('\n🔖 \x1b[34mParse Tags: Normal\x1b[0m\n');
+  console.log(tagManager.parseWhereFlat(tagParse));
 
   console.log('\n✅ \x1b[1;32mAll tag tests done.\x1b[0m');
   console.log('\n🎉 \x1b[1;32mDone. Everything looks delicious! 🍮\x1b[0m\n');

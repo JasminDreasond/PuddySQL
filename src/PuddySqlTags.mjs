@@ -1,7 +1,7 @@
 import _ from 'lodash';
 import { isJsonObject } from 'tiny-essentials';
 
-/** @typedef {{ title: string; parser?: function(string): string }} SpecialQuery */
+/** @typedef {{ title: string; parser?: (value: string) => string }} SpecialQuery */
 /** @typedef {import('./PuddySqlQuery.mjs').Pcache} Pcache */
 /** @typedef {import('./PuddySqlQuery.mjs').TagCriteria} TagCriteria */
 
@@ -235,6 +235,7 @@ class PuddySqlTags {
    *
    * @param {Object} config - The special query object to be added.
    * @param {string} config.title - The unique title identifier of the special query.
+   * @param {(value: string) => string} [config.parser] The special query function to convert the final value.
    */
   addSpecialQuery(config) {
     if (!isJsonObject(config) || typeof config.title !== 'string')
@@ -517,6 +518,84 @@ class PuddySqlTags {
     }
 
     // Only AND between the conditions generated
+    return where.length ? `(${where.join(' AND ')})` : '1';
+  }
+
+  /**
+   * Builds an SQL WHERE clause for "flat" tag tables (one tag per row).
+   *
+   * Works like parseWhere, but does NOT use EXISTS/json_each.
+   * Filters rows by direct equality or LIKE, supports negation (!tag),
+   * wildcards, OR/AND groups, and updates pCache for parameterized queries.
+   *
+   * @param {TagCriteria} [group={}] - Tag group definition
+   * @param {Pcache} [pCache={ index: 1, values: [] }] - Placeholder cache object
+   * @returns {string} SQL WHERE clause string
+   */
+  parseWhereFlat(group = {}, pCache = { index: 1, values: [] }) {
+    if (!isJsonObject(pCache))
+      throw new TypeError(`Expected pCache to be a valid object, but got ${typeof pCache}`);
+    if (!isJsonObject(group))
+      throw new TypeError(`Expected group to be a valid object, but got ${typeof group}`);
+    if (typeof pCache.index !== 'number')
+      throw new TypeError(`Invalid or missing pCache.index; expected number`);
+    if (!Array.isArray(pCache.values))
+      throw new TypeError(`Invalid or missing pCache.values; expected array`);
+
+    const where = [];
+    const tagsColumn = group.column || 'tag';
+    const allowWildcards = typeof group.allowWildcards === 'boolean' ? group.allowWildcards : false;
+    const include = Array.isArray(group.include) ? group.include : [];
+
+    /**
+     * @param {string} tag
+     * @returns {{ param: string; usesWildcard: boolean; not: boolean; }}
+     */
+    const filterTag = (tag) => {
+      if (typeof tag !== 'string')
+        throw new TypeError(`Each tag must be a string, but received: ${typeof tag}`);
+
+      const not = tag.startsWith('!');
+      const cleanTag = not ? tag.slice(1) : tag;
+
+      if (typeof pCache.index !== 'number') throw new Error('Invalid pCache index');
+      const param = `$${pCache.index++}`;
+
+      const usesWildcard =
+        allowWildcards &&
+        (cleanTag.includes(this.#wildcardA) || cleanTag.includes(this.#wildcardB));
+
+      const filteredTag = usesWildcard
+        ? cleanTag
+            .replace(/([%_])/g, '\\$1')
+            .replaceAll(this.#wildcardA, '%')
+            .replaceAll(this.#wildcardB, '_')
+        : cleanTag;
+
+      if (!Array.isArray(pCache.values)) throw new Error('Invalid pCache values');
+      pCache.values.push(filteredTag);
+      return { param, usesWildcard, not };
+    };
+
+    /** @param {{ param: string; usesWildcard: boolean; not: boolean; }} tagObj */
+    const createQuery = (tagObj) => {
+      const { param, usesWildcard, not } = tagObj;
+      const operator = usesWildcard ? 'LIKE' : '=';
+      return `${tagsColumn} ${not ? '!=' : operator} ${param}`;
+    };
+
+    for (const clause of include) {
+      if (Array.isArray(clause)) {
+        // OR group
+        const ors = clause.map((tag) => createQuery(filterTag(tag)));
+        if (ors.length) where.push(`(${ors.join(' OR ')})`);
+      } else {
+        // single tag
+        where.push(createQuery(filterTag(clause)));
+      }
+    }
+
+    // Combine all with AND
     return where.length ? `(${where.join(' AND ')})` : '1';
   }
 
@@ -825,7 +904,7 @@ class PuddySqlTags {
         .map((item) => item.trim())
         .join(' AND ')
         .replace(/(?:^|[\s(,])-(?=\w)/g, (match) => match.replace('-', '!'))
-        .replace(/\bNOT\b/g, '!')
+        .replace(/\s*\bNOT\b\s*/g, '!')
         .replace(/\&\&/g, 'AND')
         .replace(/\|\|/g, 'OR'),
       strictMode,
