@@ -1466,6 +1466,7 @@ class PuddySqlQuery {
    */
   escapeValuesFix(v, name) {
     const column = this.#table?.[name];
+    if(!isJsonObject(column)) throw new Error(`Column "${name}" does not exist in the table definition.`);
     const type = column.type ?? '';
     const func = this.#jsonEscapeFix[type];
     if (typeof func !== 'function') return v;
