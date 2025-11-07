@@ -1466,7 +1466,8 @@ class PuddySqlQuery {
    */
   escapeValuesFix(v, name) {
     const column = this.#table?.[name];
-    if(!isJsonObject(column)) throw new Error(`Column "${name}" does not exist in the table definition.`);
+    if (!isJsonObject(column))
+      throw new Error(`Column "${name}" does not exist in the table definition.`);
     const type = column.type ?? '';
     const func = this.#jsonEscapeFix[type];
     if (typeof func !== 'function') return v;
@@ -1546,6 +1547,9 @@ class PuddySqlQuery {
 
   /**
    * Insert or update one or more records with given data.
+   *
+   * ⚠️ **Important:** The table must have both `id` and `subId` configured as a composite **PRIMARY KEY**
+   * (or as a **UNIQUE constraint**) for the upsert operation to work correctly with conflict resolution.
    *
    * If `valueObj` is an array, `id` must also be an array of the same length.
    * All objects inside the array must have identical keys.
